@@ -42,15 +42,18 @@ func (this Config) BindsPorts() []string {
 type Telemetry struct {
 	Config
 
-	AuthStatus ErrorRater
+	AuthService AuthTyper
 
 	srv     *http.Server
 	runID   uuid.UUID
 	runDate time.Time
 }
 
-type ErrorRater interface {
+type AuthTyper interface {
 	Type() string
+}
+
+type ErrorRater interface {
 	ErrorRate() float64
 }
 
@@ -65,19 +68,20 @@ func (this *Telemetry) ListenAndServe() error {
 
 		wrt.Header().Set("Content-Type", "application/json")
 
-		json.NewEncoder(wrt).Encode(map[string]any{
-			//	unique id of this specific service run
-			"run_id": this.runID.String(),
-			//	service uptime in seconds
-			"uptime_s": int64(time.Since(this.runDate).Seconds()),
-			//	auth controller metrics
-			"auth": map[string]any{
-				//	controller type
-				"type": this.AuthStatus.Type(),
-				//	controller error rate
-				"error_rate": this.AuthStatus.ErrorRate(),
+		state := ModelTelemetryState{
+			RunID:  this.runID.String(),
+			Uptime: int64(time.Since(this.runDate).Seconds()),
+			Auth: ModelAuthStatus{
+				Type: this.AuthService.Type(),
 			},
-		})
+		}
+
+		if errorRater, ok := this.AuthService.(ErrorRater); ok {
+			rate := errorRater.ErrorRate()
+			state.Auth.ErrorRate = &rate
+		}
+
+		json.NewEncoder(wrt).Encode(state)
 	})
 
 	if host, _, _ := net.SplitHostPort(this.ListenAddr); strings.ToLower(host) == "localhost" {

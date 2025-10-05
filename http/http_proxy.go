@@ -21,7 +21,7 @@ import (
 
 type HttpProxy struct {
 	HandlerConfig
-	Auth auth.Controller
+	Auth auth.Authenticator
 	Dns  *net.Resolver
 }
 

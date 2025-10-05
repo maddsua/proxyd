@@ -8,10 +8,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type Controller interface {
+type Authenticator interface {
 	Type() string
 	WithPassword(ctx context.Context, auth PasswordAuth) (*Session, error)
-	ErrorRate() float64
 	Shutdown(ctx context.Context) error
 }
 

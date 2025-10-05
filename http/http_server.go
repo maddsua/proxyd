@@ -46,7 +46,7 @@ func (this ServerConfig) BindsPorts() []string {
 type HttpServer struct {
 	ServerConfig
 
-	Auth auth.Controller
+	Auth auth.Authenticator
 	Dns  *net.Resolver
 
 	pool []*http.Server

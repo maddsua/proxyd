@@ -158,8 +158,8 @@ func main() {
 	if cfg.Services.Telemetry != nil {
 
 		svc := telemetry.Telemetry{
-			Config:     *cfg.Services.Telemetry,
-			AuthStatus: authc,
+			Config:      *cfg.Services.Telemetry,
+			AuthService: authc,
 		}
 
 		go func() {

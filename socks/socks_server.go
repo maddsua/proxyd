@@ -45,7 +45,7 @@ func (this ServerConfig) BindsPorts() []string {
 type SocksServer struct {
 	ServerConfig
 
-	Auth auth.Controller
+	Auth auth.Authenticator
 	Dns  *net.Resolver
 
 	pool []net.Listener

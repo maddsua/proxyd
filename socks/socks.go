@@ -20,7 +20,7 @@ type ConnectionHandler interface {
 }
 
 type SocksProxy struct {
-	Auth auth.Controller
+	Auth auth.Authenticator
 	Dns  *net.Resolver
 }
 

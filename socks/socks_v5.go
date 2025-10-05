@@ -435,7 +435,7 @@ const (
 )
 
 type socksV5PasswordAuthenticator struct {
-	Controller auth.Controller
+	Controller auth.Authenticator
 }
 
 func (this *socksV5PasswordAuthenticator) Type() string {
