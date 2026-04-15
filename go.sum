@@ -1,9 +1,7 @@
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
-github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
-github.com/maddsua/layeh-radius v0.0.0-20250304142345-d02f34dae5f5 h1:1ocbKqNI9LXmb70SuOGQJHAoLnIgfHqd7mew4VD4pQg=
-github.com/maddsua/layeh-radius v0.0.0-20250304142345-d02f34dae5f5/go.mod h1:GOMLQOfr48Ez3lWBXaB4/zTHo9zlAebUNKpuWAlIa3Y=
+github.com/maddsua/layeh-radius v0.0.0-20250317203200-da8e491bcb77 h1:/eYxkfTojNDwjo9qn2ouNnFNh1yqhHDUJR19HCBSuGM=
+github.com/maddsua/layeh-radius v0.0.0-20250317203200-da8e491bcb77/go.mod h1:GOMLQOfr48Ez3lWBXaB4/zTHo9zlAebUNKpuWAlIa3Y=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=

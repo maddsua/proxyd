@@ -1,14 +1,8 @@
-# Test binary, built with `go test -c`
-*.test
+.vscode
+.idea
+*.DS_Store
 
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
+/proxyd.yml
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# env files
-.env
-
-# build stuff
-.build
+cmd/.build
+cmd/.bin

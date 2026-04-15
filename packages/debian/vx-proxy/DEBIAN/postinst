@@ -1,9 +1,0 @@
-#!/bin/sh
-
-set -e
-
-systemctl daemon-reload
-systemctl enable vx-proxy.service
-systemctl start vx-proxy.service
-
-echo "vx-proxy service installed and started."

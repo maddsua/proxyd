@@ -1,95 +1,69 @@
-# VX config file
+# Instance configuration
 
-The VX config file sets the base service options as well as default session options and more.
+A config location can be by using --config flag. By default proxyd tries to load it from `/etc/proxyd/proxyd.yml`, or from the current working directory.
 
-File format: `yml`
+```yml
+debug: true|false # enables debug logging
 
-Acutal file examples can be found at [cmd/vx-proxy/vx-proxy.yml](./cmd/vx-proxy/vx-proxy.yml) or `/etc/vx-proxy/vx-proxy.yml` after installing the package.
+manager: # proxy server configuration
+  type: static|rpc|radius # which type of proxy manager to use
 
-## Sections reference
+  # ---- STATIC ONLY ----
+  services:
+    - bind_addr: <ip:port> # proxy service bind address
+      type: socks|http # proxy service type
+      users: # user list, obviously
+        - username: <myuser>
+        password: <super secret password>
+        suspended: true|false # allows to disable a user without completely removing their credentials
+        max_conn: <int> # sets a total limit for concurrent tcp connections
+        bandwidth_kbit: <int> # sets bandwidth limit in kbit/s
+        dns: <ip:port> # dns server to use for this peer
+        outbound_addr: <ip> # local address to use during dials
+  # ----
 
-###  auth
+  # ---- RPC ONLY ----
+  endpoint_url: <http url> # point to your auth server
+  secret_token: <token string> # your secret token formatted as one signle string
 
-Configures AAA options such as auth serivces and sessions
+  # ----
 
-#### auth -> radius
+  # ---- RADIUS ONLY ----
 
-Options for the RADIUS AAA module
+  radius_auth_addr: 127.0.0.1:3800 # primary radius auth server addr
+  radius_acct_addr: 127.0.0.1:3801 # optional accounting address. if left empty, the primary auth addr will be used for accounting as well
+  dac_listen_addr: 127.0.0.1:3799 # this instance's DAC listen address
+  radius_secret: testsecret # shared radius secret
+  services: # list of services to spin-up
+    - bind_addr: 127.0.0.1:1080
+      type: socks
+    - bind_addr: 127.0.0.1:8080
+      type: http
+      http_forward_enabled: true
 
-Properties:
+  # ----
 
-| Key | Description | Type | Format | Can reference environment variables |
-| --- | --- | --- | --- | --- |
-| `auth_addr` | Sets RADIUS authentication server address | `string` | `ipaddr` or `ipaddr:port` | \+ |
-| `acct_addr` | Sets RADIUS accounting server | `string` | `ipaddr` or `ipaddr:port` | \+ |
-| `listen_dac` | Sets DAC's listen address. Please note that DAC is a local service running on VX that listens to incoming CoA and DM messages and updates it's sessions accordingly. The address is usually just 0.0.0.0 or a specific address assigned to the hos VX is sitting at. | `string` | `ipaddr` or `ipaddr:port` | \+ |
-| `secret` | RADIUS secret token. Make sure it's actually a secret xD | `string` | | \+ |
-
-#### auth -> session
-
-Default session options. These options can be overriden by RADIUS packets that an authentication server is sending.
-
-Properties:
-
-| Key | Description | Type | Format |
-| --- | --- | --- | --- |
-| `timeout` | Session TTL in seconds | `string` | `30s` |
-| `idle_timeout` | Time after which is a session remains idle it should be terminated | `string` | `15s` |
-| `connection_limit` | Max number of simultaneous connections | `int` | |
-| `actual_rate_rx` | Dynamic session bandwidth limit for downloads | `int` | `1000K`, `1M`, etc |
-| `actual_rate_tx` | Dynamic session bandwidth limit for uploads | `int` | `1000K`, `1M`, etc |
-| `minimum_rate_rx` | Minimal connection bandwidth for downloads | `int` | `1000K`, `1M`, etc |
-| `minimum_rate_tx` | Minimal connection bandwidth for uploads | `int` | `1000K`, `1M`, etc |
-| `maximum_rate_rx` | Maximal connection bandwidth for downloads | `int` | `1000K`, `1M`, etc |
-| `maximum_rate_tx` | Maximal connection bandwidth for uploads | `int` | `1000K`, `1M`, etc |
-
-### services
-
-Configures which services are run by VX
-
-Note: swarm refers to a service that's listening on multiple ports/addresses. It as nothing to do with docke swarm or anything like that.
-
-### services -> http
-
-Configures HTTP service inbound swarm.
-
-Properties:
-
-| Key | Description | Type | Format |
-| --- | --- | --- | --- |
-| `port_range` | Specifies what port range should the HTTP swarm take | `string` | `{first_port}-{last_port}` |
-| `forward_enable` | Enables http forward proxying (request hopping). By default only tcp tunneling is enabled. | `boolean` | |
-
-### services -> socks
-
-Configures SOCKS service inbound swarm.
-
-Properties:
-
-| Key | Description | Type | Format |
-| --- | --- | --- | --- |
-| `port_range` | Specifies what port range should the SOCKS swarm take | `string` | `{first_port}-{last_port}` |
-
-### services -> telemetry
-
-Telemetry services provides a simple http endpoint that can be used to detect proxy service downtime or other issues. It is NOT compatible with OpenTelemetry.
-
-Properties:
-
-| Key | Description | Type | Format |
-| --- | --- | --- | --- |
-| `listen_addr` | Telemetry service listen address/port | `string` | `ipaddr` or `ipaddr:port` |
-
-### dns
-
-Sets a DNS server to be used for all user requests
-
-Properties:
-
-| Key | Description | Type | Format |
-| --- | --- | --- | --- |
-| `server` | DNS server's host name or address | `string` | `ipaddr` or `ipaddr:port` |
-
-### debug
-
-Enables verbose logging (aka debug mode). Same as providing `-debug` command line argument.
+rpc_server: # rpc server configuration
+  listen_addr: <ip:port> # does this need an explaination?
+  instances: # list of managers to accept
+    - id: <uuid> # instance UUID
+      secret: <url-base64-encoded secret>
+      services:
+      - bind_addr: <ip:port> # proxy service bind address
+        type: socks|http # proxy service type
+        users: # user list, obviously
+          - username: <myuser>
+            password: <super secret password>
+            suspended: true|false # allows to disable a user without completely removing their credentials
+            max_conn: <int> # sets a total limit for concurrent tcp connections
+            bandwidth_kbit: <int> # sets bandwidth limit in kbit/s
+            dns: <ip:port> # dns server to use for this peer
+            outbound_addr: <ip> # local address to use during dials
+radius_server:
+  listen_addr: 127.0.0.1:3800 # server's own address. the same address must be passed to the radius manager config of the instance that acts as the proxy orchestrator
+  dac_addr: 127.0.0.1:3799 # listen address of the proxy instance's DAC
+  secret: testsecret # shared radius secret
+  users: # user list, defined in the same way as for static config
+    - username: maddsua
+      password: testpass
+```

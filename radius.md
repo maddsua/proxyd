@@ -1,138 +1,94 @@
-# VX'es RADIUS controls
+# RADIUS attributes and notes
 
-VX uses a slightly modified "flow" of a generic DSL AAA. It avoids introducing a custom RADIUS dictionary by repurposing some of the standard radius attributes. 
+This document describes what attributes are used by proxyd over the RADIUS protocol.
 
-Please read this document before jumping into writing your own authentication server implementation or trying to use an already existing solution.
+## Access-Request
 
-The core goal of using RADIUS here is to avoid reinventing a square wheel that isn't compatible with absolutely anything out there. At the same time, retaining a full logic compatibility with existing vendors is out of scope and is not considered as an objective.
+Request attributes:
 
-Generally, the AAA workflow looks like this:
+| Attribute | Role | Required |
+| --- | --- | --- |
+| rfc2865.ServiceType | Informational | |
+| rfc2865.UserName | Proxy user's name | + |
+| rfc2865.UserPassword | Proxy user's password | + |
+| rfc2865.CallingStationID | Original user's public IP address | |
+| rfc2865.NASIPAddress | Proxy host's IP address, to which a user is connecting | |
+| rfc3162.NASIPv6Address | Proxy host's IPv6 address, to which a user is connecting | |
+| rfc2865.NASPort | Proxy host's port, to which a user is connecting | + |
 
-```
-# Authenticating and authorizing a client
-# This doesn't allow any data transfer until a session started through the accounting
+Access-Accept attributes:
 
-NAS: Access-Request
-	rfc2865.Service-Type === Framed
-	rfc2865.User-Name
-	rfc2865.User-Password
-	rfc2865.NAS-IP-Address OR rfc2865.NAS-IPv6-Address
-	rfc2865.NAS-Port
-	rfc2865.Framed-Route
+| Attribute | Role | Required |
+| --- | --- | --- |
+| rfc4372.ChargeableUserIdentity | Used as an optional PeerID to display in logs. If not present, username is used otherwise | |
+| rfc2866.AcctSessionID | Traffic accounting session ID | |
+| rfc2865.FramedIPAddress | Outbound IP address to give to the user | |
+| rfc6911.FramedIPv6Address | Outbound IPv6 address to give to the user | |
+| rfc2865.SessionTimeout | Time in seconds after a user must reauthenticated | |
+| rfc2865.IdleTimeout | Time in seconds during which a users' session would be reauthenticated automatically, granted that some user activity was present | |
+| rfc4679.MaximumDataRateDownstream | Max download speed in bits/s | |
+| rfc4679.MaximumDataRateUpstream | Max upload speed in bits/s | |
+| rfc2865.PortLimit | Concurrent connection limit | |
+| rfc6911.DNSServerIPv6Address | DNS server IP address (doesn't have to actually be an IPv6) | |
 
-AUTH: Access-Accept OR Access-Reject
-	rfc2865.Service-Type === Framed
-	rfc2866.Acct-Session-ID *
-	rfc2865.Framed-IP-Address OR rfc6911.Framed-IPv6-Address
-	rfc2865.Session-Timeout
-	rfc2865.Idle-Timeout
-	rfc4679.Actual-Data-Rate-Downstream
-	rfc4679.Actual-Data-Rate-Upstream
-	rfc4679.Minimum-Data-Rate-Downstream
-	rfc4679.Minimum-Data-Rate-Upstream
-	rfc4679.Maximum-Data-Rate-Downstream
-	rfc4679.Maximum-Data-Rate-Upstream
+Access-Reject attributes:
 
-# If no Data-Rate settings are provided by a server, default values would be used.
-# If no Framed-IP* is provided by a server, the original NAS IP address will be used for outbound proxy connections.
+| Attribute | Role | Required |
+| --- | --- | --- |
+| rfc3576.ErrorCause | Optional rejection reason | |
 
-# Starting a session
 
-NAS: Accounting-Request
-	rfc2866.Acct-Status-Type === Start
-	rfc2866.Acct-Session-ID
+## Accounting-Request
 
-ACCT: Accounting-Response
-	[no attributes expected]
-...
+| Attribute | Role | Required |
+| --- | --- | --- |
+| rfc2866.AcctStatusType | RADIUS accounting type | + |
+| rfc2866.AcctSessionID | RADIUS accounting session ID | + |
+| rfc4372.ChargeableUserIdentity | Informational | |
+| rfc2866.AcctInputOctets | Data downloaded since last report | |
+| rfc2866.AcctOutputOctets | Data uploaded since last report | |
 
-NAS: Accounting-Request
-	rfc2866.Acct-Status-Type === Interim-Update
-	rfc2866.Acct-Session-ID
-	rfc2866.Acct-Input-Octets
-	rfc2866.Acct-Output-Octets
+## Disconnect-Request
 
-ACCT: Accounting-Response
-	[no attributes expected]
-...
+This is a DAC request, implying that the request is send backwards from the auth server to a proxy instance.
 
-# Terminating a session
+AcctSessionID is used as the session key and MUST be present.
 
-NAS: Accounting-Request
-	rfc2866.Acct-Status-Type === Stop
-	rfc2866.Acct-Session-ID
-	rfc2866.Acct-Input-Octets
-	rfc2866.Acct-Output-Octets
+Request attributes:
 
-ACCT: Accounting-Response
-	[no attributes expected]
-```
+| Attribute | Role | Required |
+| --- | --- | --- |
+| rfc2866.AcctSessionID | Session ID to disconnect | + |
 
-As well as basic AAA VX also supports dynamic authentication stuff like updating session parameters and whatnot using RADIUS DAC, which has the following flow:
+Response attributes:
 
-```
+| Attribute | Role | Required |
+| --- | --- | --- |
+| rfc3576.ErrorCause | Rejection reason | |
 
-# Updating existing session connection speed
+## Change-of-Authority-Request
 
-DAC: CoA-Request
-	rfc2866.Acct-Session-ID *
-	rfc2865.Idle-Timeout
-	rfc4679.Actual-Data-Rate-Downstream
-	rfc4679.Actual-Data-Rate-Upstream
+This is a DAC request, implying that the request is send backwards from the auth server to a proxy instance.
 
-NAS: CoA-ACK OR CoA-NACK
+AcctSessionID is used as the session key and MUST be present.
 
-...
+Request attributes:
 
-# Terminating a session
+| Attribute | Role | Required |
+| --- | --- | --- |
+| rfc4372.ChargeableUserIdentity | Used as an optional PeerID to display in logs. If not present, username is used otherwise | |
+| rfc2866.AcctSessionID | Traffic accounting session ID | + |
+| rfc2865.FramedIPAddress | Outbound IP address to give to the user | |
+| rfc6911.FramedIPv6Address | Outbound IPv6 address to give to the user | |
+| rfc2865.SessionTimeout | Time in seconds after a user must reauthenticated | |
+| rfc2865.IdleTimeout | Time in seconds during which a users' session would be reauthenticated automatically, granted that some user activity was present | |
+| rfc4679.MaximumDataRateDownstream | Max download speed in bits/s | |
+| rfc4679.MaximumDataRateUpstream | Max upload speed in bits/s | |
+| rfc2865.PortLimit | Concurrent connection limit | |
+| rfc6911.DNSServerIPv6Address | DNS server IP address (doesn't have to actually be an IPv6) | |
 
-DAC: Disconnect-Request
-	rfc2866.Acct-Session-ID *
+Response attributes:
 
-NAS: Disconnect-ACK OR Disconnect-NAK
-```
-
-\* Required response/DAC request attributes
-
-## Attribute details
-
-To provide more details on how to control VX via RADIUS here's a complete list of used RADIUS attributes:
-
-| Attribute | Description | Used in | Dynamic (can be updated with CoA) | Type |
-| --- | --- | --- | --- | --- |
-| `rfc2865.Service-Type` | Always set to `Framed` to indicate client intention. May or may not be present in auth server responses. Any values returned by it except for `Framed` will cause VX to abort session authorization | `Access-Request`, `Access-Accept` |  | `enum` |
-| `rfc2865.User-Name` | Plaintext username of a connecting user | `Access-Request` | | `string` |
-| `rfc2865.User-Password` | Connecting user's password | `Access-Request` | | `secret` |
-| `rfc2865.NAS-IP-Address` or `rfc2865.NAS-IPv6-Address` | Contains proxy's IP address that a client is trying to connect to | `Access-Request` | | `ipaddr` |
-| `rfc2865.NAS-Port` | A tcp/udp port number that a user is connecting to on a proxy server | `Access-Request` | | `int` |
-| `rfc2865.Framed-Route` | At this moment is only used to pass the original client's IP. Users the following format: `client_ip/{32\|128} 0.0.0.0`. For example: `127.0.0.1/32 0.0.0.0`. This is the artifact of the decisiong of not creating a custom dictionary | `Access-Request` | | `string` |
-| `rfc2865.Framed-IP-Address` or `rfc6911.Framed-IPv6-Address` | Contains an IP address that VX must give to the user | `Access-Accept` | | `ipaddr` |
-| `rfc2865.Session-Timeout` | Sets the amount of time in seconds after which a session much be terminated | `Access-Accept` | | `int` |
-| `rfc2865.Idle-Timeout` | Sets the amount of time in seconds after which if a session haven't transferred any data it should be terminated | `Access-Accept`, `CoA-Request` | \+ | `int` |
-| `rfc2865.Port-Limit` | Sets the max number of connections that a session can have | `Access-Accept`, `CoA-Request` | \+ | `int` |
-| `rfc2865.rfc4679.Actual-Data-Rate-Downstream` | Sets dynamic connection speed limit for download streams. It is divided between all the active connections for a session | `Access-Accept`, `CoA-Request` | \+ | `int` |
-| `rfc2865.rfc4679.Actual-Data-Rate-Upstream` | Sets dynamic connection speed limit for upload streams. It is divided between all the active connections for a session | `Access-Accept`, `CoA-Request` | \+ | `int` |
-| `rfc2865.rfc4679.Minimum-Data-Rate-Downstream` | Sets the minimal connection download speed. If overrides the dynamically calculated bandwidth value if it's lower than this. It does nothing when dynamic bandwidth is not set or is overriden | `Access-Accept`, `CoA-Request` | \+ | `int` |
-| `rfc2865.rfc4679.Minimum-Data-Rate-Upstream` | Sets the minimal connection upload speed. If overrides the dynamically calculated bandwidth value if it's lower than this. It does nothing when dynamic bandwidth is not set or is overriden | `Access-Accept`, `CoA-Request` | \+ | `int` |
-| `rfc2865.rfc4679.Maximum-Data-Rate-Downstream` | Sets the maximal connection download speed. It overrides any dynamically calculated banwidth value that is higher than this | `Access-Accept`, `CoA-Request` | \+ | `int` |
-| `rfc2865.rfc4679.Maximum-Data-Rate-Upstream` | Sets the maximal connection upload speed. It overrides any dynamically calculated banwidth value that is higher than this | `Access-Accept`, `CoA-Request` | \+ | `int` |
-| `rfc2866.Acct-Session-ID` | Contains session UUID in binary representation. First it's returned by `Access-Accept` packet. This ID must be used in all the following `Accounting-Request`s or DAC messages. | `Access-Accept`, `Accounting-Request`, `CoA-Request`, `Disconnect-Request` | | `bytes` (UUID) |
-| `rfc2866.Acct-Status-Type` | Tells which accounting operation must be performed | `Accounting-Request` | | `enum` |
-| `rfc2866.Acct-Input-Octets` | Total data volume downloaded by the client since the last update | `Accounting-Request` | | `int` |
-| `rfc2866.Acct-Output-Octets` | Total data volume uploaded by the client since the last update | `Accounting-Request` | | `int` |
-
-### Bandwidth controls
-
-Since VX uses a mix of different radius attributes to control connection speed, these are the possible modes:
-
-#### A: The proper way
-
-Configuring `Actual-Data-Rate-*` attributes sets the total desired bandwidth over all the connections of each sessions. The actual connection speed is then determined dynamically based on active data usage.
-
-However, in some cases it may be desirable to set a minimal possible connection speed, to, for example, ensure that no connection is getting slower than a certain threshold. Use `Minimum-Data-Rate-*` attributes to send lower bandwidth bound.
-
-In other cases limiting the maximum connection speed may be desired. To override dynamic banwidth upper bound `Maximum-Data-Rate-*` attributes can be used.
-
-#### B: Using only Maximum-Data-Rate-* limits
-
-When setting only the upper connection speed, vx would fall back to the configured global values (config file) or the default values hardcoded in the config parser itself. By setting those default values to some high numbers one could then limit per-connection speed with `Maximum-Data-Rate-*` radius attributes.
+| Attribute | Role | Required |
+| --- | --- | --- |
+| rfc3576.ErrorCause | Rejection reason | |

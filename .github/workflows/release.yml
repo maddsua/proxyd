@@ -17,7 +17,8 @@ jobs:
           echo "Detected version: $RELEASE_VERSION; Tag: $RELEASE_TAG"
           echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
           echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
-  build-vx-debian:
+
+  build-release-debian:
     name: Build proxy package
     runs-on: ubuntu-22.04
     needs: ["extract-tag"]
@@ -27,33 +28,11 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v5
         with:
-          go-version: '>=1.23.2'
+          go-version: '>=1.24.4'
       - name: Build package
-        run: make build-proxy-deb VERSION=${{ needs.extract-tag.outputs.version }}
-      - name: Prepare artifact
-        run: mv .build/debian/vx-proxy.deb vx-proxy-${{ needs.extract-tag.outputs.version }}-amd64.deb
+        run: make -C cmd build-debian VERSION=${{ needs.extract-tag.outputs.version }}
       - name: Upload artifact
-        run: gh release upload ${{ needs.extract-tag.outputs.tag }} vx-proxy-${{ needs.extract-tag.outputs.version }}-amd64.deb
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-  build-vx-tools-debian:
-    name: Build tools package
-    runs-on: ubuntu-22.04
-    needs: ["extract-tag"]
-    steps:
-      - name: git checkout
-        uses: actions/checkout@v4
-      - name: Install go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '>=1.23.2'
-      - name: Build package
-        run: make build-tools-deb VERSION=${{ needs.extract-tag.outputs.version }}
-      - name: Prepare artifact
-        run: mv .build/debian/vx-tools.deb vx-proxy-tools-${{ needs.extract-tag.outputs.version }}-amd64.deb
-      - name: Upload artifact
-        run: gh release upload ${{ needs.extract-tag.outputs.tag }} vx-proxy-tools-${{ needs.extract-tag.outputs.version }}-amd64.deb
+        run: gh release upload ${{ needs.extract-tag.outputs.tag }} .build/proxyd-debian-${{ needs.extract-tag.outputs.version }}-amd64.deb
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

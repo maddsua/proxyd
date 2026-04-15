@@ -1,194 +1,146 @@
 package utils
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"sync"
 	"time"
 )
 
-func ReadBuffN(reader io.Reader, n int) ([]byte, error) {
+// Read a set number of bytes into a buffer
+func ReadN(reader io.Reader, n int) ([]byte, error) {
 
 	if n <= 0 {
-		return nil, errors.New("buffer size is zero")
+		return nil, nil
 	}
 
 	buff := make([]byte, n)
-	bytesRead, err := reader.Read(buff)
-	if bytesRead == len(buff) {
+	read, err := reader.Read(buff)
+	if read == len(buff) {
 		return buff, nil
-	} else if err == nil && bytesRead != len(buff) {
-		return nil, io.EOF
+	} else if err == nil && read != len(buff) {
+		return buff[:read], io.EOF
 	}
 
 	return buff, err
 }
 
+// Read just one byte
 func ReadByte(reader io.Reader) (byte, error) {
-	buff, err := ReadBuffN(reader, 1)
+	buff, err := ReadN(reader, 1)
 	return buff[0], err
 }
 
-type Bandwidther interface {
-	Bandwidth() (int, bool)
-}
-
-type Accounter interface {
-	Account(delta int)
-}
-
-// Piper splices two network connections into one and acts as a middleman between the hosts.
+// Reads a null-terminated string
 //
-// 'RX' stands for data received from remote, where 'TX' stands for client-sent data respectively
-type ConnectionPiper struct {
-	Remote    net.Conn
-	RxAcct    Accounter
-	RxMaxRate Bandwidther
+// Note: it's slow as balls for larger sizes and you should use bufio instead
+func ReadNullTerminatedString(reader io.Reader, limit int) (string, error) {
 
-	Client    net.Conn
-	TxAcct    Accounter
-	TxMaxRate Bandwidther
+	var buff bytes.Buffer
+
+	for limit > 0 && buff.Len() < limit {
+
+		next, err := ReadByte(reader)
+		if err != nil {
+			//	 don't handle EOF specially as a valid null-termianted string should not result in an EOF
+			return "", err
+		}
+
+		if next == 0x00 {
+			return buff.String(), nil
+		}
+
+		buff.WriteByte(next)
+	}
+
+	return "", fmt.Errorf("input too large")
 }
 
-func (this *ConnectionPiper) Pipe(ctx context.Context) (err error) {
-
-	txCtx, cancelTx := context.WithCancel(ctx)
-	rxCtx, cancelRx := context.WithCancel(ctx)
+// Pipes data between two connections
+func PipeDuplexContext(ctx context.Context, remote, local net.Conn) (err error) {
 
 	doneCh := make(chan error, 2)
-	defer close(doneCh)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		doneCh <- PipeIO(txCtx, this.Remote, this.Client, this.TxMaxRate, this.TxAcct)
+		doneCh <- pipeConnection(remote, local)
 	}()
 
 	go func() {
 		defer wg.Done()
-		doneCh <- PipeIO(rxCtx, this.Client, this.Remote, this.RxMaxRate, this.RxAcct)
+		doneCh <- pipeConnection(local, remote)
 	}()
 
 	select {
 	case err = <-doneCh:
+		// when any of the pipes exits, just wait until the other one does so too
 	case <-ctx.Done():
+		// but if the context gets cancelled before that, set deadlines to 0,
+		// causing copy operations to error out and pipes to exit
+		_ = remote.SetDeadline(time.Unix(1, 0))
+		_ = local.SetDeadline(time.Unix(1, 0))
 	}
-
-	cancelRx()
-	cancelTx()
-
-	_ = this.Remote.SetReadDeadline(time.Unix(1, 0))
-	_ = this.Client.SetReadDeadline(time.Unix(1, 0))
 
 	wg.Wait()
-	return
+
+	return err
 }
 
-// Direct connection piper function. Use with ConnectionPiper to get automatic controls such as cancellation and what not
-func PipeIO(ctx context.Context, dst io.Writer, src io.Reader, limiter Bandwidther, acct Accounter) error {
+type ClosedReporter interface {
+	IsClosed() bool
+}
 
-	const defaultChunkSize = 32 * 1024
+func pipeConnection(dst, src net.Conn) error {
 
-	var copyLimit = func(bandwidth int) error {
+	// Prevent reading more data from the opposite pipe as soon as we failed
+	// to read more data to be sent or failed to send it,
+	defer dst.SetReadDeadline(time.Unix(1, 0))
 
-		chunk := make([]byte, FramedVolume(bandwidth))
-		started := time.Now()
+	// copy data normally until something happens
+	_, err := io.Copy(dst, src)
 
-		read, err := src.Read(chunk)
-
-		if read > 0 {
-
-			written, err := dst.Write(chunk[:read])
-
-			if acct != nil {
-				acct.Account(written)
-			}
-
-			if err != nil {
-				return err
-			} else if written < read {
-				return io.ErrShortWrite
-			}
-
-			FramedIoWait(bandwidth, min(written, read), started)
-		}
-
-		return err
+	// exit with no error reported if any of the pipe ends was closed intentionally
+	if cr, ok := dst.(ClosedReporter); ok && cr.IsClosed() {
+		return nil
+	} else if cr, ok = src.(ClosedReporter); ok && cr.IsClosed() {
+		return nil
 	}
 
-	var copyDirect = func() error {
+	return err
+}
 
-		written, err := io.CopyN(dst, src, defaultChunkSize)
+func KbitsToRawBandwidth(val int) int {
+	return max(0, val*125)
+}
 
-		if acct != nil {
-			acct.Account(int(written))
-		}
+func BitsToRawBandwidth(val int) int {
+	return max(0, val/8)
+}
 
-		return err
+func RawBandwidthToBits(val int) int {
+	return max(0, val*8)
+}
+
+func MomentaryEffectiveBandwidth(base int64, moment, after time.Time) int64 {
+
+	if base <= 0 {
+		return 0
 	}
 
-	for ctx.Err() == nil {
-
-		var bandwidth int
-		if limiter != nil {
-			bandwidth, _ = limiter.Bandwidth()
-		}
-
-		var err error
-		if bandwidth > 0 {
-			err = copyLimit(bandwidth)
-		} else {
-			err = copyDirect()
-		}
-
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return err
-		}
+	if after.IsZero() {
+		return base
 	}
 
-	return nil
-}
+	elapsed := moment.Sub(after).Seconds()
+	effective := int64(elapsed * float64(base))
 
-// Returns the amount of time it's expected for an IO operation to take. Bandwidth in bps, size in bytes
-func FramedIoDuration(bandwidth int, size int) time.Duration {
-	tp := FramedVolume(bandwidth)
-	return time.Duration(int64(time.Second) * int64(size) / int64(tp))
-}
-
-// Converts network bandwidth into data volume
-func FramedVolume(bandwidth int) int {
-	return max(0, bandwidth/8)
-}
-
-// Converts data volume into network bandwidth
-func FramedBandwidth(volume int) int {
-	return max(0, volume*8)
-}
-
-// Creates a fake delay that can be used to limit data transfer rate
-func FramedIoWait(bandwidth int, size int, started time.Time) {
-	elapsed := time.Since(started)
-	time.Sleep(FramedIoDuration(bandwidth, size) - elapsed)
-}
-
-type FlushWriter struct {
-	io.Writer
-}
-
-func (this FlushWriter) Write(p []byte) (n int, err error) {
-
-	if n, err = this.Writer.Write(p); n > 0 {
-		if flusher, ok := this.Writer.(http.Flusher); ok {
-			flusher.Flush()
-		}
-	}
-
-	return
+	// santify check to make sure that floating point multiplication doesn't produce completely bogus results.
+	bound := (int64(elapsed) + 1) * base
+	return max(0, min(effective, bound))
 }

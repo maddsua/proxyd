@@ -1,6 +1,0 @@
-Package: vx-proxy-devtools
-Architecture: amd64
-Maintainer: maddsua
-Section: net
-Priority: optional
-Description: Development tools for the vx-proxy
