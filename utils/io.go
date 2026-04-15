@@ -115,8 +115,16 @@ func pipeConnection(dst, src net.Conn) error {
 	return err
 }
 
-func KbitToRawBandwidth(val int) int {
+func KbitsToRawBandwidth(val int) int {
 	return max(0, val*125)
+}
+
+func BitsToRawBandwidth(val int) int {
+	return max(0, val/8)
+}
+
+func RawBandwidthToBits(val int) int {
+	return max(0, val*8)
 }
 
 func MomentaryEffectiveBandwidth(base int64, moment, after time.Time) int64 {

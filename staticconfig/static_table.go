@@ -51,8 +51,8 @@ func ProxyServiceTable(entries []ServiceUtilityConfig) []proxytable.ProxyService
 				Enabled:        !entry.Suspended,
 				MaxConnections: entry.MaxConn,
 				Bandwidth: &proxytable.ProxyPeerBandwidth{
-					RxBytes: utils.KbitToRawBandwidth(entry.BandwidthKbit),
-					TxBytes: utils.KbitToRawBandwidth(entry.BandwidthKbit),
+					RxBytes: utils.KbitsToRawBandwidth(entry.BandwidthKbit),
+					TxBytes: utils.KbitsToRawBandwidth(entry.BandwidthKbit),
 				},
 				DNS:          entry.DNS,
 				OutboundAddr: entry.OutboundAddr,
@@ -60,8 +60,8 @@ func ProxyServiceTable(entries []ServiceUtilityConfig) []proxytable.ProxyService
 
 			if entry.BandwidthKbit > 0 {
 				peer.Bandwidth = &proxytable.ProxyPeerBandwidth{
-					RxBytes: utils.KbitToRawBandwidth(entry.BandwidthKbit),
-					TxBytes: utils.KbitToRawBandwidth(entry.BandwidthKbit),
+					RxBytes: utils.KbitsToRawBandwidth(entry.BandwidthKbit),
+					TxBytes: utils.KbitsToRawBandwidth(entry.BandwidthKbit),
 				}
 			}
 

@@ -71,7 +71,7 @@ func (cfg *RadiusUserConfig) ToPeer() *radius_pkg.PeerAuthorization {
 		FramedIP:         net.ParseIP(cfg.OutboundAddr),
 		DNSServer:        net.ParseIP(cfg.DNS),
 		ConnectionLimit:  cfg.MaxConn,
-		DataRateRx:       utils.KbitToRawBandwidth(cfg.BandwidthKbit),
-		DataRateTx:       utils.KbitToRawBandwidth(cfg.BandwidthKbit),
+		DataRateRx:       utils.KbitsToRawBandwidth(cfg.BandwidthKbit),
+		DataRateTx:       utils.KbitsToRawBandwidth(cfg.BandwidthKbit),
 	}
 }
