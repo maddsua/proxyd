@@ -17,6 +17,7 @@ jobs:
       - run: go test -v ./utils
   go-build:
     name: Build go package
+    needs: ["go-test"]
     runs-on: ubuntu-22.04
     steps:
       - name: git checkout
