@@ -1,0 +1,16 @@
+# comment this out to disable verbose service logging
+debug: true
+manager:
+  type: static
+  services:
+    - bind_addr: 127.0.0.1:1080
+      type: socks
+      users:
+        - username: sampleuser
+          password: samplepassword
+    - bind_addr: 127.0.0.1:8080
+      type: http
+      users:
+        - username: sampleuser
+          password: samplepassword
+      http_forward_enabled: true

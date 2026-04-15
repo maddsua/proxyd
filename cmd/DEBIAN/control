@@ -1,0 +1,5 @@
+Package: proxyd
+Maintainer: maddsua
+Section: net
+Priority: optional
+Description: A pocket-sized proxy orchestration service

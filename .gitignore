@@ -3,3 +3,6 @@
 *.DS_Store
 
 /proxyd.yml
+
+cmd/.build
+cmd/.bin
