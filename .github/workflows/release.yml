@@ -32,7 +32,7 @@ jobs:
       - name: Build package
         run: make -C cmd build-debian VERSION=${{ needs.extract-tag.outputs.version }}
       - name: Upload artifact
-        run: gh release upload ${{ needs.extract-tag.outputs.tag }} .build/proxyd-debian-${{ needs.extract-tag.outputs.version }}-amd64.deb
+        run: gh release upload ${{ needs.extract-tag.outputs.tag }} cmd/.build/proxyd-debian-${{ needs.extract-tag.outputs.version }}-amd64.deb
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
