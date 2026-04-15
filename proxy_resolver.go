@@ -14,6 +14,8 @@ import (
 )
 
 const DefaultDnsTimeout = 15 * time.Second
+const DefaultDnsTestTimeout = 5 * time.Second
+const DefaultDnsTestWarnTimeout = 2 * time.Second
 const DefaultDnsTestResultTTL = time.Minute
 
 type DNSLookupError struct {
@@ -198,7 +200,7 @@ func (dt *DNSTester) Test(ctx context.Context, addr string) error {
 		return entry.Val
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, DefaultDnsTimeout)
+	ctx, cancel := context.WithTimeout(ctx, DefaultDnsTestTimeout)
 	defer cancel()
 
 	resultChan := make(chan error, 1)
@@ -215,7 +217,7 @@ func (dt *DNSTester) Test(ctx context.Context, addr string) error {
 		resultChan <- dt.LookupTestRecords(ctx, addr, nil)
 	}()
 
-	warnTimer := time.After(3 * time.Second)
+	warnTimer := time.After(DefaultDnsTestWarnTimeout)
 
 	for {
 		select {

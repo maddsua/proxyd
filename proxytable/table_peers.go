@@ -222,10 +222,20 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 				slog.String("dns_server", wantDNS))
 
 			if auth.dnsTester != nil && wantDNS != "" {
-				go auth.setPeerDnsServer(ctx, peer, wantDNS)
-			} else {
-				peer.DNS.ServerAddr = wantDNS
+
+				if err := auth.dnsTester.Test(ctx, wantDNS); err != nil {
+
+					slog.Warn("PeerAuthenticator: Peer's DNS server unreachable. Default DNS server will be used",
+						slog.String("slot", auth.slotName),
+						slog.String("peer", peer.displayName()),
+						slog.String("dns_server", wantDNS),
+						slog.String("err", err.Error()))
+
+					wantDNS = ""
+				}
 			}
+
+			peer.DNS.ServerAddr = wantDNS
 		}
 
 		wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr)
@@ -344,23 +354,6 @@ func (auth *peerAuthenticator) ResetPeers() {
 
 	auth.peers = nil
 	auth.users = nil
-}
-
-func (auth *peerAuthenticator) setPeerDnsServer(ctx context.Context, peer *peerSlot, addr string) {
-
-	if err := auth.dnsTester.Test(ctx, addr); err != nil {
-
-		slog.Warn("PeerAuthenticator: Test DNS server",
-			slog.String("slot", auth.slotName),
-			slog.String("peer", peer.displayName()),
-			slog.String("dns_server", addr),
-			slog.String("err", err.Error()))
-
-		peer.DNS.ServerAddr = ""
-		return
-	}
-
-	peer.DNS.ServerAddr = addr
 }
 
 type peerSlot struct {

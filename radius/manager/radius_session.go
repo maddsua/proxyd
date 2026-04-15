@@ -127,10 +127,20 @@ func (state *peerSessionState) Refresh(ctx context.Context, peer *radius_pkg.Pee
 		}
 
 		if state.dnsTester != nil && wantDns != "" {
-			go state.probeAndSetDns(ctx, wantDns)
-		} else {
-			state.sess.DNS.ServerAddr = wantDns
+
+			if err := state.dnsTester.Test(ctx, wantDns); err != nil {
+
+				slog.Warn("RADIUS: Peer's DNS server unreachable. Default DNS server will be used",
+					slog.String("slot", state.slotID),
+					slog.String("peer", state.sess.PeerID),
+					slog.String("dns_server", wantDns),
+					slog.String("err", err.Error()))
+
+				wantDns = ""
+			}
 		}
+
+		state.sess.DNS.ServerAddr = wantDns
 	}
 
 	if sessionReset {
@@ -140,23 +150,6 @@ func (state *peerSessionState) Refresh(ctx context.Context, peer *radius_pkg.Pee
 	state.Account(ctx)
 
 	return nil
-}
-
-func (state *peerSessionState) probeAndSetDns(ctx context.Context, wantDns string) {
-
-	if err := state.dnsTester.Test(ctx, wantDns); err != nil {
-
-		slog.Warn("RADIUS: Test peer DNS server",
-			slog.String("slot", state.slotID),
-			slog.String("peer", state.sess.PeerID),
-			slog.String("dns_server", wantDns),
-			slog.String("err", err.Error()))
-
-		state.sess.DNS.ServerAddr = ""
-		return
-	}
-
-	state.sess.DNS.ServerAddr = wantDns
 }
 
 func (state *peerSessionState) Account(ctx context.Context) {
