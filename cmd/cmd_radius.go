@@ -69,8 +69,12 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 		fmt.Fprintln(os.Stderr, "DEBUG ENABLED")
 	}
 
-	handler := &radiusHandler{}
+	if cfg.Radius.Secret == "" {
+		fmt.Fprintln(os.Stderr, "RADIUS secret not set")
+		os.Exit(1)
+	}
 
+	handler := &radiusHandler{}
 	handler.RefreshConfig(cfg.Radius)
 
 	configWatcher, cancelWatcher := utils.WatchFile(configLocation)
@@ -113,8 +117,11 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 		errCh <- srv.ListenAndServe()
 	}()
 
-	slog.Info("RADIUS server listening",
-		slog.String("at", srv.Addr))
+	slog.Info("RADIUS server auth",
+		slog.String("addr", srv.Addr))
+
+	slog.Info("RADIUS server accounting",
+		slog.String("addr", srv.Addr))
 
 	select {
 	case err := <-errCh:
