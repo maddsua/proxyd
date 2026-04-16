@@ -82,4 +82,10 @@ Refer to the [full configuration example](./config.md) for more.
 
 It's best to deploy proxyd directly onto a VPS as it needs to see the original IP addresses of incoming connections.
 
-It is not impossible to make it work with docker, but I didn't bother and so shouldn't you.
+#### Docker deploys
+
+When deploying with Docker, the `host` networking mode is highly suggested, if not required.
+
+Without it you won't be able to bind to specific IP addresses and the whole thing with managing ports will become a lot more complicated.
+
+On other words, don't forget to add `--network host` before your `docker run` command.
