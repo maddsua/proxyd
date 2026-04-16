@@ -20,7 +20,7 @@ type peerAuthenticator struct {
 	mtx        sync.Mutex
 	peers      map[string]*peerSlot
 	users      map[string]*peerSlot
-	deltaQueue map[string]TrafficDelta
+	deltaQueue map[string]*TrafficDelta
 }
 
 func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, _ net.Addr, clientIP net.IP, username, password string) (*proxyd.ProxySession, error) {
@@ -107,45 +107,43 @@ func (auth *peerAuthenticator) RebalancePools() {
 
 func (auth *peerAuthenticator) Deltas() []TrafficDelta {
 
-	if auth.peers == nil {
-		return nil
-	}
-
 	auth.mtx.Lock()
 	defer auth.mtx.Unlock()
 
 	for _, slot := range auth.peers {
-		auth.collectPeerDelta(slot)
+		auth.sumPeerDelta(slot)
 	}
 
 	var entries []TrafficDelta
 	for key, delta := range auth.deltaQueue {
-		entries = append(entries, delta)
+		entries = append(entries, *delta)
 		delete(auth.deltaQueue, key)
 	}
 
 	return entries
 }
 
-func (auth *peerAuthenticator) collectPeerDelta(peer *peerSlot) {
+func (auth *peerAuthenticator) sumPeerDelta(peer *peerSlot) {
 
 	rx := peer.Pool.TrafficRx.Swap(0)
-	tx := peer.Pool.TrafficRx.Swap(0)
+	tx := peer.Pool.TrafficTx.Swap(0)
 
 	if rx == 0 && tx == 0 {
 		return
 	}
 
 	if auth.deltaQueue == nil {
-		auth.deltaQueue = map[string]TrafficDelta{}
+		auth.deltaQueue = map[string]*TrafficDelta{}
 	}
 
 	delta := auth.deltaQueue[peer.PeerID]
+	if delta == nil {
+		delta = &TrafficDelta{PeerID: peer.PeerID}
+		auth.deltaQueue[peer.PeerID] = delta
+	}
 
 	delta.RxBytes += rx
 	delta.TxBytes += tx
-
-	auth.deltaQueue[peer.PeerID] = delta
 }
 
 func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []ProxyTablePeerEntry) {
@@ -324,7 +322,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 			slog.String("peer_id", peer.PeerID))
 
 		peer.Reset()
-		auth.collectPeerDelta(peer)
+		auth.sumPeerDelta(peer)
 
 		delete(auth.peers, key)
 	}
@@ -349,7 +347,7 @@ func (auth *peerAuthenticator) ResetPeers() {
 
 	for _, peer := range auth.peers {
 		peer.Reset()
-		auth.collectPeerDelta(peer)
+		auth.sumPeerDelta(peer)
 	}
 
 	auth.peers = nil

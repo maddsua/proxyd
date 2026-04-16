@@ -22,7 +22,7 @@ type Orchestrator struct {
 	slots   map[string]*serviceSlot
 	slotMtx sync.Mutex
 
-	deltas   map[string]TrafficDelta
+	deltas   map[string]*TrafficDelta
 	deltaMtx sync.Mutex
 
 	dnsTester proxyd.DNSTester
@@ -38,6 +38,7 @@ func (orch *Orchestrator) initEx() error {
 
 	orch.doneChan = make(chan struct{})
 	orch.slots = map[string]*serviceSlot{}
+	orch.deltas = map[string]*TrafficDelta{}
 
 	go orch.rebalanceRoutine()
 
@@ -136,7 +137,7 @@ func (orch *Orchestrator) CollectDeltas() []TrafficDelta {
 
 	var deltas []TrafficDelta
 	for key, entry := range orch.deltas {
-		deltas = append(deltas, entry)
+		deltas = append(deltas, *entry)
 		delete(orch.deltas, key)
 	}
 
@@ -148,19 +149,21 @@ func (orch *Orchestrator) collectSlotDeltas(slot *serviceSlot) {
 	orch.deltaMtx.Lock()
 	defer orch.deltaMtx.Unlock()
 
-	if orch.deltas == nil {
-		orch.deltas = map[string]TrafficDelta{}
-	}
-
 	for _, next := range slot.auth.Deltas() {
+		orch.sumDelta(next)
+	}
+}
 
-		delta := orch.deltas[next.PeerID]
+func (orch *Orchestrator) sumDelta(next TrafficDelta) {
 
-		delta.RxBytes += next.RxBytes
-		delta.TxBytes += next.TxBytes
-
+	delta := orch.deltas[next.PeerID]
+	if delta == nil {
+		delta = &TrafficDelta{PeerID: next.PeerID}
 		orch.deltas[next.PeerID] = delta
 	}
+
+	delta.RxBytes += next.RxBytes
+	delta.TxBytes += next.TxBytes
 }
 
 func (orch *Orchestrator) ReturnDeltas(entries []TrafficDelta) {
@@ -169,13 +172,7 @@ func (orch *Orchestrator) ReturnDeltas(entries []TrafficDelta) {
 	defer orch.deltaMtx.Unlock()
 
 	for _, entry := range entries {
-
-		delta := orch.deltas[entry.PeerID]
-
-		delta.RxBytes += entry.RxBytes
-		delta.TxBytes += entry.TxBytes
-
-		orch.deltas[entry.PeerID] = delta
+		orch.sumDelta(entry)
 	}
 }
 
