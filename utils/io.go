@@ -132,7 +132,3 @@ func MomentaryEffectiveByteRate(base int64, moment, after time.Time) int64 {
 	bound := (int64(elapsed) + 1) * base
 	return max(0, min(effective, bound))
 }
-
-func KbitRate(rateKbit int) int64 {
-	return int64(rateKbit) * 1000
-}

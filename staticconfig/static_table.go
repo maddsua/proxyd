@@ -3,7 +3,6 @@ package static
 import (
 	http_pkg "github.com/maddsua/proxyd/http"
 	"github.com/maddsua/proxyd/proxytable"
-	"github.com/maddsua/proxyd/utils"
 )
 
 type ConfigurationWrapper struct {
@@ -50,18 +49,14 @@ func ProxyServiceTable(entries []ServiceUtilityConfig) []proxytable.ProxyService
 				},
 				Enabled:        !entry.Suspended,
 				MaxConnections: entry.MaxConn,
-				Bandwidth: &proxytable.ProxyPeerBandwidth{
-					MaxRx: utils.KbitRate(entry.BandwidthKbit),
-					MaxTx: utils.KbitRate(entry.BandwidthKbit),
-				},
-				DNS:          entry.DNS,
-				OutboundAddr: entry.OutboundAddr,
+				DNS:            entry.DNS,
+				OutboundAddr:   entry.OutboundAddr,
 			}
 
-			if entry.BandwidthKbit > 0 {
+			if kbits := entry.BandwidthKbit; kbits > 0 {
 				peer.Bandwidth = &proxytable.ProxyPeerBandwidth{
-					MaxRx: utils.KbitRate(entry.BandwidthKbit),
-					MaxTx: utils.KbitRate(entry.BandwidthKbit),
+					MaxRx: int64(kbits) * 1000,
+					MaxTx: int64(kbits) * 1000,
 				}
 			}
 

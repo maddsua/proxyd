@@ -10,7 +10,6 @@ import (
 	rpc_client "github.com/maddsua/proxyd/rpc/client"
 	static_config "github.com/maddsua/proxyd/staticconfig"
 	static_manager "github.com/maddsua/proxyd/staticconfig"
-	"github.com/maddsua/proxyd/utils"
 )
 
 const GlobalConfigLocation = "/etc/proxyd/proxyd.yml"
@@ -71,7 +70,7 @@ func (cfg *RadiusUserConfig) ToPeer() *radius_pkg.PeerAuthorization {
 		FramedIP:         net.ParseIP(cfg.OutboundAddr),
 		DNSServer:        net.ParseIP(cfg.DNS),
 		ConnectionLimit:  cfg.MaxConn,
-		MaxRxRate:        utils.KbitRate(cfg.BandwidthKbit),
-		MaxTxRate:        utils.KbitRate(cfg.BandwidthKbit),
+		MaxRxRate:        int64(cfg.BandwidthKbit) * 1000,
+		MaxTxRate:        int64(cfg.BandwidthKbit) * 1000,
 	}
 }
