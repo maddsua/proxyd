@@ -159,8 +159,10 @@ func (mgr *Manager) Shutdown(ctx context.Context) error {
 		errList = append(errList, fmt.Errorf("service shutdown: %v", err))
 	}
 
-	if err := mgr.Client.ReportTraffic(ctx, model.InstanceTrafficUpdate{Deltas: mgr.orch.CollectDeltas()}); err != nil {
-		errList = append(errList, fmt.Errorf("report traffic: %v", err))
+	if deltas := mgr.orch.CollectDeltas(); len(deltas) > 0 {
+		if err := mgr.Client.ReportTraffic(ctx, model.InstanceTrafficUpdate{Deltas: deltas}); err != nil {
+			errList = append(errList, fmt.Errorf("report traffic: %v", err))
+		}
 	}
 
 	return utils.JoinInlineErrors(errList...)
