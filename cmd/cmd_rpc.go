@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"strings"
-	"sync/atomic"
+	"sync"
 
 	"github.com/maddsua/proxyd/rpc"
 	"github.com/maddsua/proxyd/rpc/handler"
@@ -75,7 +74,7 @@ func cmd_rpc(args *utils.ArgList, exitCh <-chan os.Signal) {
 	defer cancelWatcher()
 
 	rpcHandler := rpcMethodHandler{}
-	rpcHandler.cfg.Store(cfg.RPC)
+	rpcHandler.Refresh(cfg.RPC)
 
 	go func() {
 		for range configWatcher {
@@ -87,7 +86,7 @@ func cmd_rpc(args *utils.ArgList, exitCh <-chan os.Signal) {
 				continue
 			}
 
-			rpcHandler.cfg.Store(cfg.RPC)
+			rpcHandler.Refresh(cfg.RPC)
 
 			slog.Info("Config updated")
 		}
@@ -126,7 +125,14 @@ func cmd_rpc(args *utils.ArgList, exitCh <-chan os.Signal) {
 }
 
 type rpcMethodHandler struct {
-	cfg atomic.Value
+	cfg RPCServerConfiguration
+	mtx sync.Mutex
+}
+
+func (handler *rpcMethodHandler) Refresh(cfg RPCServerConfiguration) {
+	handler.mtx.Lock()
+	defer handler.mtx.Unlock()
+	handler.cfg = cfg
 }
 
 func (handler *rpcMethodHandler) OnStatus(ctx context.Context, token *rpc.InstanceToken, params rpc_model.InstanceStatus) error {
@@ -181,12 +187,10 @@ func (handler *rpcMethodHandler) OnProxyTable(ctx context.Context, token *rpc.In
 
 func (handler *rpcMethodHandler) authorizeInstance(token *rpc.InstanceToken) (*RPCClientConfiguration, error) {
 
-	cfg, ok := handler.cfg.Load().(RPCServerConfiguration)
-	if !ok {
-		panic(fmt.Errorf("invalid config atomic value of type %T", handler.cfg.Load()))
-	}
+	handler.mtx.Lock()
+	defer handler.mtx.Unlock()
 
-	for _, client := range cfg.Instances {
+	for _, client := range handler.cfg.Instances {
 
 		if client.ID == token.ID {
 
