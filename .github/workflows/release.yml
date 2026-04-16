@@ -1,7 +1,14 @@
 name: Release
+
 on:
   release:
     types: [published]
+
+permissions:
+  actions: read
+  contents: write
+  packages: write
+
 jobs:
   extract-tag:
     name: Extract release tag
@@ -36,3 +43,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+
+  build-and-publish-docker:
+    name: Build and publish docker image
+    runs-on: ubuntu-latest
+    needs: ["extract-tag"]
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_BASE_TAG: ghcr.io/${{ github.repository }}
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+      - name: Login to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish action
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./cmd/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_BASE_TAG }}:${{ needs.extract-tag.outputs.tag }}, ${{ env.IMAGE_BASE_TAG }}:latest
