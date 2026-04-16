@@ -104,7 +104,7 @@ func (dns *ProxyDNSResolver) LookupIpNetwork(ctx context.Context, ipnetwork, hos
 	// enforce version match when a network is specified
 	case "ip4", "ip6":
 		if dstAddrVer := utils.IPNetwork(hostIP); dstAddrVer != ipnetwork {
-			return nil, &IpVersionError{RemoteNet: dstAddrVer, LocalNet: ipnetwork}
+			return nil, &PeerNetworkMismatchError{DestNet: dstAddrVer, PeerNet: ipnetwork}
 		}
 	}
 
@@ -151,12 +151,12 @@ func isValidDnsPort(port string) error {
 	return nil
 }
 
-type IpVersionError struct {
-	RemoteNet, LocalNet string
+type PeerNetworkMismatchError struct {
+	DestNet, PeerNet string
 }
 
-func (err *IpVersionError) Error() string {
-	return fmt.Sprintf("ip version mismatch: %v-->%v", err.LocalNet, err.RemoteNet)
+func (err *PeerNetworkMismatchError) Error() string {
+	return fmt.Sprintf("%s destination is unreachable to an %s peer", err.DestNet, err.PeerNet)
 }
 
 func DestinationIPAllowed(ip net.IP) error {

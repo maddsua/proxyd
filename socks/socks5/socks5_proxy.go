@@ -84,7 +84,7 @@ func ServeConnect(ctx context.Context, conn net.Conn, sess *proxyd.ProxySession,
 			slog.String("err", err.Error()))
 
 		switch err.(type) {
-		case *proxyd.IpVersionError:
+		case *proxyd.PeerNetworkMismatchError:
 			wrt.Reply(ReplyCodeAddressTypeNotSupported, nil)
 		case *proxyd.NetworkPolicyError:
 			wrt.Reply(ReplyCodeConnectionNotAllowed, nil)

@@ -298,7 +298,7 @@ func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Requ
 			slog.String("err", err.Error()))
 
 		switch err.(type) {
-		case *proxyd.IpVersionError:
+		case *proxyd.PeerNetworkMismatchError:
 			wrt.WriteHeader(http.StatusServiceUnavailable)
 		case *proxyd.NetworkPolicyError:
 			wrt.WriteHeader(http.StatusForbidden)
