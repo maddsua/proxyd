@@ -35,6 +35,7 @@ func (pd *ProxyDialer) DialContext(ctx context.Context, network, address string)
 	}
 }
 
+// PeerAddr is normally a public IP address that's used for outbound connections
 type PeerAddr struct {
 	IP net.IP
 }
@@ -53,28 +54,22 @@ func (addr *PeerAddr) Network() string {
 	return utils.IPNetwork(addr.IP)
 }
 
-func (addr *PeerAddr) PublicIP() net.IP {
-
+func (addr *PeerAddr) dialAddr() net.IP {
 	if addr == nil {
 		return nil
 	}
-
-	if ip := addr.IP; ip.IsGlobalUnicast() {
-		return ip
-	}
-
-	return nil
+	return addr.IP
 }
 
 func (addr *PeerAddr) TCPDialAddr() net.Addr {
-	if ip := addr.PublicIP(); ip != nil {
+	if ip := addr.dialAddr(); ip != nil {
 		return &net.TCPAddr{IP: ip}
 	}
 	return nil
 }
 
 func (addr *PeerAddr) UDPDialAddr() net.Addr {
-	if ip := addr.PublicIP(); ip != nil {
+	if ip := addr.dialAddr(); ip != nil {
 		return &net.UDPAddr{IP: ip}
 	}
 	return nil

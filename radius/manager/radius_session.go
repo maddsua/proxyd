@@ -97,10 +97,10 @@ func (state *peerSessionState) Refresh(ctx context.Context, peer *radius_pkg.Pee
 
 	wrantFramedIP, err := unwrapFramedIP(peer.FramedIP)
 	if err != nil {
-		slog.Warn("RADIUS: Update framed IP",
+		slog.Warn("RADIUS: New framed IP cannot be assigned",
 			slog.String("slot", state.slotID),
 			slog.String("peer", state.sess.PeerID),
-			slog.String("framedIP", peer.FramedIP.String()),
+			slog.String("framed_ip", peer.FramedIP.String()),
 			slog.String("err", err.Error()))
 	}
 
@@ -237,10 +237,12 @@ func unwrapFramedIP(ip net.IP) (*proxyd.PeerAddr, error) {
 
 	if ip == nil {
 		return nil, nil
+	} else if !ip.IsGlobalUnicast() {
+		return nil, errors.New("ip not public")
 	}
 
 	if !utils.IPBindable(ip) {
-		return nil, errors.New("ip address not assignable")
+		return nil, errors.New("ip not bindable")
 	}
 
 	return &proxyd.PeerAddr{IP: ip}, nil

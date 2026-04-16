@@ -238,7 +238,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 
 		wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr)
 		if err != nil {
-			slog.Warn("PeerAuthenticator: Outbound address",
+			slog.Warn("PeerAuthenticator: New outbound IP cannot be assigned",
 				slog.String("slot", auth.slotName),
 				slog.String("peer", peer.displayName()),
 				slog.String("addr", entry.OutboundAddr),
@@ -384,10 +384,12 @@ func unwrapPeerOutboundIP(addr string) (*proxyd.PeerAddr, error) {
 	ip := net.ParseIP(addr)
 	if ip == nil {
 		return nil, errors.New("invalid IP address")
+	} else if !ip.IsGlobalUnicast() {
+		return nil, errors.New("ip not public")
 	}
 
 	if !utils.IPBindable(ip) {
-		return nil, errors.New("ip address not assignable")
+		return nil, errors.New("ip not bindable")
 	}
 
 	return &proxyd.PeerAddr{IP: ip}, nil
