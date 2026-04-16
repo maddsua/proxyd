@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/maddsua/proxyd"
@@ -13,28 +14,30 @@ import (
 )
 
 type Orchestrator struct {
-	mtx  sync.Mutex
-	init bool
-	done bool
+	init atomic.Bool
+	done atomic.Bool
 
 	doneChan chan struct{}
 
-	slots  map[string]*serviceSlot
-	deltas map[string]TrafficDelta
+	slots   map[string]*serviceSlot
+	slotMtx sync.Mutex
+
+	deltas   map[string]TrafficDelta
+	deltaMtx sync.Mutex
 
 	dnsTester proxyd.DNSTester
 }
 
 func (orch *Orchestrator) initEx() error {
 
-	if orch.done {
+	if orch.done.Load() {
 		return errors.New("orchestrator done")
-	} else if orch.init {
+	} else if !orch.init.CompareAndSwap(false, true) {
 		return nil
 	}
 
-	orch.init = true
 	orch.doneChan = make(chan struct{})
+	orch.slots = map[string]*serviceSlot{}
 
 	go orch.rebalanceRoutine()
 
@@ -45,8 +48,8 @@ func (orch *Orchestrator) rebalanceRoutine() {
 
 	var rebalance = func() {
 
-		orch.mtx.Lock()
-		defer orch.mtx.Unlock()
+		orch.slotMtx.Lock()
+		defer orch.slotMtx.Unlock()
 
 		for _, slot := range orch.slots {
 			slot.auth.RebalancePools()
@@ -85,27 +88,35 @@ func (orch *Orchestrator) rebalanceRoutine() {
 			return
 		}
 	}
-
 }
 
 func (orch *Orchestrator) Services() []ServiceStatus {
 
-	orch.mtx.Lock()
-	defer orch.mtx.Unlock()
+	orch.slotMtx.Lock()
+	defer orch.slotMtx.Unlock()
 
 	var entries []ServiceStatus
 
 	for _, slot := range orch.slots {
 
 		next := ServiceStatus{
-			BindAddr: slot.svc.BindAddr().String(),
-			Type:     slot.svc.ProxyService(),
-			Up:       slot.err == nil,
-			Peers:    slot.auth.Peers(),
+			Up:    slot.err == nil,
+			Peers: slot.auth.Peers(),
+		}
+
+		if svc := slot.svc; svc != nil {
+			next.BindAddr = svc.BindAddr().String()
+			next.Type = svc.ProxyService()
 		}
 
 		if err := slot.err; err != nil {
-			next.Error = err.Error()
+			if ext, ok := err.(*ServiceStartError); ok {
+				next.BindAddr = ext.BindAddr
+				next.Type = ext.Service
+				next.Error = ext.Message
+			} else {
+				next.Error = err.Error()
+			}
 		}
 
 		entries = append(entries, next)
@@ -116,8 +127,8 @@ func (orch *Orchestrator) Services() []ServiceStatus {
 
 func (orch *Orchestrator) CollectDeltas() []TrafficDelta {
 
-	orch.mtx.Lock()
-	defer orch.mtx.Unlock()
+	orch.slotMtx.Lock()
+	defer orch.slotMtx.Unlock()
 
 	for _, slot := range orch.slots {
 		orch.collectSlotDeltas(slot)
@@ -133,6 +144,9 @@ func (orch *Orchestrator) CollectDeltas() []TrafficDelta {
 }
 
 func (orch *Orchestrator) collectSlotDeltas(slot *serviceSlot) {
+
+	orch.deltaMtx.Lock()
+	defer orch.deltaMtx.Unlock()
 
 	if orch.deltas == nil {
 		orch.deltas = map[string]TrafficDelta{}
@@ -151,8 +165,8 @@ func (orch *Orchestrator) collectSlotDeltas(slot *serviceSlot) {
 
 func (orch *Orchestrator) ReturnDeltas(entries []TrafficDelta) {
 
-	orch.mtx.Lock()
-	defer orch.mtx.Unlock()
+	orch.deltaMtx.Lock()
+	defer orch.deltaMtx.Unlock()
 
 	for _, entry := range entries {
 
@@ -167,19 +181,15 @@ func (orch *Orchestrator) ReturnDeltas(entries []TrafficDelta) {
 
 func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServiceEntry) error {
 
-	orch.mtx.Lock()
-	defer orch.mtx.Unlock()
-
 	if err := orch.initEx(); err != nil {
 		return err
 	}
 
+	orch.slotMtx.Lock()
+	defer orch.slotMtx.Unlock()
+
 	staleMap := map[string]*serviceSlot{}
-	if orch.slots == nil {
-		orch.slots = map[string]*serviceSlot{}
-	} else {
-		maps.Copy(staleMap, orch.slots)
-	}
+	maps.Copy(staleMap, orch.slots)
 
 	// compare the new proxy table agains existing state
 	for _, entry := range services {
@@ -226,11 +236,10 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 			} else {
 				slog.Info("Orchestrator: Restart slot",
 					slog.String("bind_addr", entry.BindAddr),
-					slog.String("old_service", slot.svc.ProxyService()),
 					slog.String("new_service", entry.Service))
 			}
 
-			if slot.svc, slot.err = newService(&entry.ProxyServiceOptions, &slot.auth); slot.err != nil {
+			if slot.svc, slot.err = NewSlotService(entry.ProxyServiceOptions, &slot.auth); slot.err != nil {
 				slog.Error("Orchestrator: Start service",
 					slog.String("bind_addr", entry.BindAddr),
 					slog.String("service", entry.Service),
@@ -284,13 +293,12 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 
 func (orch *Orchestrator) Shutdown(ctx context.Context) error {
 
-	orch.mtx.Lock()
-	defer orch.mtx.Unlock()
-
-	if !orch.init || orch.done {
+	if !orch.init.Load() || !orch.done.CompareAndSwap(false, true) {
 		return nil
 	}
-	orch.done = true
+
+	orch.slotMtx.Lock()
+	defer orch.slotMtx.Unlock()
 
 	close(orch.doneChan)
 
@@ -298,33 +306,17 @@ func (orch *Orchestrator) Shutdown(ctx context.Context) error {
 		return nil
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(len(orch.slots))
-
-	errChan := make(chan error, len(orch.slots))
+	var errList []error
 
 	for key, slot := range orch.slots {
 
-		go func(slot *serviceSlot) {
+		if err := slot.Shutdown(ctx); err != nil && ctx.Err() == nil {
+			errList = append(errList, err)
+		} else {
+			delete(orch.slots, key)
+		}
 
-			if err := slot.Shutdown(ctx); err != nil && ctx.Err() == nil {
-				errChan <- err
-			} else {
-				delete(orch.slots, key)
-			}
-			orch.collectSlotDeltas(slot)
-
-			wg.Done()
-
-		}(slot)
-	}
-
-	wg.Wait()
-	close(errChan)
-
-	var errList []error
-	for err := range errChan {
-		errList = append(errList, err)
+		orch.collectSlotDeltas(slot)
 	}
 
 	return utils.JoinInlineErrors(errList...)
