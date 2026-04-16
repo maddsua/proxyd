@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,6 +18,14 @@ const ServiceType = "http"
 
 type HttpServiceOptions struct {
 	HttpForwardEnabled bool `json:"http_forward_enabled" yaml:"http_forward_enabled"`
+}
+
+func (opts HttpServiceOptions) ProxyService() string {
+	return ServiceType
+}
+
+func (opts HttpServiceOptions) String() string {
+	return fmt.Sprintf("forward=%v", opts.HttpForwardEnabled)
 }
 
 func (opts HttpServiceOptions) AllowMethodList() []string {
@@ -112,6 +121,10 @@ func (svc *httpService) BindAddr() net.Addr {
 	}
 
 	return &net.TCPAddr{IP: hostIp, Port: portNumber}
+}
+
+func (svc *httpService) Options() proxyd.ProxyServiceOptions {
+	return svc.handler.HttpServiceOptions
 }
 
 func (svc *httpService) serve(listener net.Listener) {

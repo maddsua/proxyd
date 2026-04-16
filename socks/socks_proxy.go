@@ -52,6 +52,10 @@ func (svc *socksService) BindAddr() net.Addr {
 	return svc.listener.Addr()
 }
 
+func (svc *socksService) Options() proxyd.ProxyServiceOptions {
+	return nil
+}
+
 func (svc *socksService) serve() {
 
 	for svc.ctx.Err() == nil {
