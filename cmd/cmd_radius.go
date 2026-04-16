@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/subtle"
-	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -17,17 +16,15 @@ import (
 
 func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 
-	fmt.Fprintln(os.Stderr, "Starting as a RADIUS server")
-
-	fmt.Fprintln(os.Stderr, "WARN: RADIUS mode is meant for debugging other instances")
-	fmt.Fprintln(os.Stderr, "WARN: If you just want to spin up some proxies without dynamic control - use static config instead")
+	slog.Info("Service starting",
+		slog.String("mode", "radius server"))
 
 	lock := utils.NewInstanceLock("radius")
 	defer lock.Unlock()
 
 	configLocation, err := utils.FindFileLocation("./proxyd.yml", GlobalConfigLocation)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "No config files exist")
+		slog.Error("No config files exist")
 		os.Exit(1)
 	}
 
@@ -44,7 +41,8 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 
 		case "-c", "--config":
 			if configLocation, ok = args.Next(); !ok {
-				fmt.Fprintln(os.Stderr, "Config location MAY NOT be empty", arg)
+				slog.Error("Config location argument MAY NOT be empty",
+					slog.String("cmd_arg", arg))
 				os.Exit(1)
 			}
 
@@ -52,25 +50,27 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 			debugFlag = true
 
 		default:
-			fmt.Fprintln(os.Stderr, "Unexpected argument:", arg)
-			fmt.Fprintln(os.Stderr, "Usage: proxyd [proxy] [--config <location>]")
+			slog.Error("Unexpected argument",
+				slog.String("cmd_arg", arg))
+			slog.Info("Usage: proxyd radius [--config <location>]")
 			os.Exit(1)
 		}
 	}
 
 	cfg, err := utils.LoadConfigLocation[GlobalConfiguration](configLocation)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Load config:", err)
+		slog.Error("Load config",
+			slog.String("err", err.Error()))
 		os.Exit(1)
 	}
 
 	if debugFlag || cfg.Debug {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
-		fmt.Fprintln(os.Stderr, "DEBUG ENABLED")
+		slog.Debug("ENABLED")
 	}
 
 	if cfg.Radius.Secret == "" {
-		fmt.Fprintln(os.Stderr, "RADIUS secret not set")
+		slog.Error("RADIUS secret is not set")
 		os.Exit(1)
 	}
 
