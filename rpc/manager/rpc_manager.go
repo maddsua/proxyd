@@ -156,11 +156,11 @@ func (mgr *Manager) Shutdown(ctx context.Context) error {
 	var errList []error
 
 	if err := mgr.orch.Shutdown(ctx); err != nil {
-		errList = append(errList, err)
+		errList = append(errList, fmt.Errorf("service shutdown: %v", err))
 	}
 
 	if err := mgr.Client.ReportTraffic(ctx, model.InstanceTrafficUpdate{Deltas: mgr.orch.CollectDeltas()}); err != nil {
-		errList = append(errList, err)
+		errList = append(errList, fmt.Errorf("report traffic: %v", err))
 	}
 
 	return utils.JoinInlineErrors(errList...)
