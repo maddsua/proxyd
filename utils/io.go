@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -35,25 +34,20 @@ func ReadByte(reader io.Reader) (byte, error) {
 }
 
 // Reads a null-terminated string
-//
-// Note: it's slow as balls for larger sizes and you should use bufio instead
 func ReadNullTerminatedString(reader io.Reader, limit int) (string, error) {
 
-	var buff bytes.Buffer
+	data := make([]byte, limit+1)
 
-	for limit > 0 && buff.Len() < limit {
+	for idx := range len(data) {
 
-		next, err := ReadByte(reader)
-		if err != nil {
+		if _, err := reader.Read(data[idx : idx+1]); err != nil {
 			//	 don't handle EOF specially as a valid null-termianted string should not result in an EOF
 			return "", err
 		}
 
-		if next == 0x00 {
-			return buff.String(), nil
+		if data[idx] == 0x00 {
+			return string(data[:idx]), nil
 		}
-
-		buff.WriteByte(next)
 	}
 
 	return "", fmt.Errorf("input too large")
