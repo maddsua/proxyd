@@ -2,9 +2,11 @@ package proxyd_test
 
 import (
 	"crypto/rand"
+	"fmt"
 	"io"
 	"math"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -345,4 +347,196 @@ func Test_PoolResize_Grow(t *testing.T) {
 	if total != finalLimit {
 		t.Fatal("unexpected factual pool size", total)
 	}
+}
+
+func Test_PoolBandwidth_Read_1(t *testing.T) {
+
+	const bandwidth = 10_000
+	const expectMs = 1_500
+	const volume = int64((bandwidth / 8) * (float64(expectMs) / 1000))
+
+	var pool proxyd.ProxyConnectionPool
+	pool.SetBandwidth(bandwidth, bandwidth)
+
+	conn, err := pool.WithConnection(&dummyConnection{Reader: io.LimitReader(rand.Reader, volume)})
+	if err != nil {
+		t.Fatalf("pool.WithConnection: %v", err)
+		return
+	}
+
+	started := time.Now()
+
+	if _, err := io.Copy(io.Discard, conn); err != nil {
+		t.Fatalf("io.Copy: %v", err)
+		return
+	}
+
+	elapsed := time.Since(started)
+
+	//	calculate millisecond-scale deviation in percent
+	deviation := (math.Abs(float64(elapsed.Milliseconds())-float64(expectMs)) / float64(expectMs)) * 100
+
+	if deviation > 1 {
+		t.Fatalf("unexpected read duration: %v, deviated: %.2f%%", elapsed, deviation)
+		return
+	}
+
+	t.Logf("deviation: %.2f%%", deviation)
+}
+
+func Test_PoolBandwidth_Read_2(t *testing.T) {
+
+	const nconn = 3
+	const bandwidth = 30_000 * nconn
+	const volumePerConn = (bandwidth / 8) / nconn
+	const expectMs = 1_000
+
+	var pool proxyd.ProxyConnectionPool
+	pool.SetBandwidth(bandwidth, bandwidth)
+
+	started := time.Now()
+
+	connChan := make(chan net.Conn, nconn)
+
+	for range nconn {
+
+		conn, err := pool.WithConnection(&dummyConnection{Reader: io.LimitReader(rand.Reader, volumePerConn)})
+		if err != nil {
+			t.Fatalf("pool.WithConnection: %v", err)
+			return
+		}
+
+		connChan <- conn
+	}
+
+	close(connChan)
+
+	pool.Rebalance()
+
+	var wg sync.WaitGroup
+
+	for conn := range connChan {
+
+		wg.Add(1)
+
+		go func() {
+
+			defer wg.Done()
+
+			if _, err := io.Copy(io.Discard, conn); err != nil {
+				panic(fmt.Errorf("io.Copy: %v", err))
+			}
+
+		}()
+	}
+
+	wg.Wait()
+
+	elapsed := time.Since(started)
+
+	//	calculate millisecond-scale deviation in percent
+	deviation := (math.Abs(float64(elapsed.Milliseconds())-float64(expectMs)) / float64(expectMs)) * 100
+
+	if deviation > 1 {
+		t.Fatalf("unexpected read duration: %v, deviated: %.2f%%", elapsed, deviation)
+		return
+	}
+
+	t.Logf("deviation: %.2f%%", deviation)
+}
+
+func Test_PoolBandwidth_Write_1(t *testing.T) {
+
+	const bandwidth = 10_000
+	const expectMs = 1_500
+	const volume = int64((bandwidth / 8) * (float64(expectMs) / 1000))
+
+	var pool proxyd.ProxyConnectionPool
+	pool.SetBandwidth(bandwidth, bandwidth)
+
+	conn, err := pool.WithConnection(&dummyConnection{})
+	if err != nil {
+		t.Fatalf("pool.WithConnection: %v", err)
+		return
+	}
+
+	started := time.Now()
+
+	if _, err := io.Copy(conn, io.LimitReader(rand.Reader, volume)); err != nil {
+		t.Fatalf("io.Copy: %v", err)
+		return
+	}
+
+	elapsed := time.Since(started)
+
+	//	calculate millisecond-scale deviation in percent
+	deviation := (math.Abs(float64(elapsed.Milliseconds())-float64(expectMs)) / float64(expectMs)) * 100
+
+	if deviation > 1 {
+		t.Fatalf("unexpected write duration: %v, deviated: %.2f%%", elapsed, deviation)
+		return
+	}
+
+	t.Logf("deviation: %.2f%%", deviation)
+}
+
+func Test_PoolBandwidth_Write_2(t *testing.T) {
+
+	const nconn = 3
+	const bandwidth = 50_000 * nconn
+	const volumePerConn = (bandwidth / 8) / nconn
+	const expectMs = 1_000
+
+	var pool proxyd.ProxyConnectionPool
+	pool.SetBandwidth(bandwidth, bandwidth)
+
+	started := time.Now()
+
+	connChan := make(chan net.Conn, nconn)
+
+	for range nconn {
+
+		conn, err := pool.WithConnection(&dummyConnection{})
+		if err != nil {
+			t.Fatalf("pool.WithConnection: %v", err)
+			return
+		}
+
+		connChan <- conn
+	}
+
+	close(connChan)
+
+	pool.Rebalance()
+
+	var wg sync.WaitGroup
+
+	for conn := range connChan {
+
+		wg.Add(1)
+
+		go func() {
+
+			defer wg.Done()
+
+			if _, err := io.Copy(conn, io.LimitReader(rand.Reader, volumePerConn)); err != nil {
+				panic(fmt.Errorf("io.Copy: %v", err))
+			}
+
+		}()
+	}
+
+	wg.Wait()
+
+	elapsed := time.Since(started)
+
+	//	calculate millisecond-scale deviation in percent
+	deviation := (math.Abs(float64(elapsed.Milliseconds())-float64(expectMs)) / float64(expectMs)) * 100
+
+	if deviation > 1 {
+		t.Fatalf("unexpected write duration: %v, deviated: %.2f%%", elapsed, deviation)
+		return
+	}
+
+	t.Logf("deviation: %.2f%%", deviation)
 }

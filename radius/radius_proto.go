@@ -118,8 +118,8 @@ type PeerAuthorization struct {
 	DNSServer        net.IP
 	Timeout          time.Duration
 	IdleTimeout      time.Duration
-	DataRateRx       int
-	DataRateTx       int
+	MaxRxRate        int64
+	MaxTxRate        int64
 	ConnectionLimit  int
 }
 
@@ -159,13 +159,13 @@ func (peer *PeerAuthorization) ToPacket(packet *radius.Packet) error {
 		}
 	}
 
-	if rx := utils.RawBandwidthToBits(peer.DataRateRx); rx > 0 {
+	if rx := peer.MaxRxRate; rx > 0 {
 		if err := rfc4679.MaximumDataRateDownstream_Set(packet, rfc4679.MaximumDataRateDownstream(rx)); err != nil {
 			return fmt.Errorf("rfc4679.MaximumDataRateDownstream_Set: %v", err)
 		}
 	}
 
-	if tx := utils.RawBandwidthToBits(peer.DataRateTx); tx > 0 {
+	if tx := peer.MaxTxRate; tx > 0 {
 		if err := rfc4679.MaximumDataRateUpstream_Set(packet, rfc4679.MaximumDataRateUpstream(tx)); err != nil {
 			return fmt.Errorf("rfc4679.MaximumDataRateUpstream_Set: %v", err)
 		}
@@ -195,8 +195,8 @@ func PeerAuthFromPacket(packet *radius.Packet) *PeerAuthorization {
 		DNSServer:        rfc6911.DNSServerIPv6Address_Get(packet),
 		Timeout:          time.Duration(rfc2865.SessionTimeout_Get(packet)) * time.Second,
 		IdleTimeout:      time.Duration(rfc2865.IdleTimeout_Get(packet)) * time.Second,
-		DataRateRx:       utils.BitsToRawBandwidth(int(rfc4679.MaximumDataRateDownstream_Get(packet))),
-		DataRateTx:       utils.BitsToRawBandwidth(int(rfc4679.MaximumDataRateUpstream_Get(packet))),
+		MaxRxRate:        int64(rfc4679.MaximumDataRateDownstream_Get(packet)),
+		MaxTxRate:        int64(rfc4679.MaximumDataRateUpstream_Get(packet)),
 		ConnectionLimit:  int(rfc2865.PortLimit_Get(packet)),
 	}
 

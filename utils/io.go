@@ -115,19 +115,7 @@ func pipeConnection(dst, src net.Conn) error {
 	return err
 }
 
-func KbitsToRawBandwidth(val int) int {
-	return max(0, val*125)
-}
-
-func BitsToRawBandwidth(val int) int {
-	return max(0, val/8)
-}
-
-func RawBandwidthToBits(val int) int {
-	return max(0, val*8)
-}
-
-func MomentaryEffectiveBandwidth(base int64, moment, after time.Time) int64 {
+func MomentaryEffectiveByteRate(base int64, moment, after time.Time) int64 {
 
 	if base <= 0 {
 		return 0
@@ -143,4 +131,8 @@ func MomentaryEffectiveBandwidth(base int64, moment, after time.Time) int64 {
 	// santify check to make sure that floating point multiplication doesn't produce completely bogus results.
 	bound := (int64(elapsed) + 1) * base
 	return max(0, min(effective, bound))
+}
+
+func KbitRate(rateKbit int) int64 {
+	return int64(rateKbit) * 1000
 }

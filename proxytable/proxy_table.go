@@ -62,8 +62,8 @@ func (opts *PeerLoginOptions) RateLimiter() (quota int, window time.Duration) {
 }
 
 type ProxyPeerBandwidth struct {
-	RxBytes int `json:"rx"`
-	TxBytes int `json:"tx"`
+	MaxRx int64 `json:"rx"`
+	MaxTx int64 `json:"tx"`
 }
 
 type TrafficDelta struct {

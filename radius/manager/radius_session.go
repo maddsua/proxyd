@@ -80,17 +80,17 @@ func (state *peerSessionState) Refresh(ctx context.Context, peer *radius_pkg.Pee
 		state.sess.Pool.SetConnectionLimit(peer.ConnectionLimit)
 	}
 
-	if rxRate, txRate := state.sess.Pool.Bandwidth(); rxRate != peer.DataRateRx || txRate != peer.DataRateTx {
+	if rxRate, txRate := state.sess.Pool.Bandwidth(); rxRate != peer.MaxRxRate || txRate != peer.MaxTxRate {
 
 		if !isInit {
 			slog.Info("RADIUS: Update bandwidth",
 				slog.String("slot", state.slotID),
 				slog.String("peer", state.sess.PeerID),
-				slog.Int("rx", peer.DataRateRx),
-				slog.Int("tx", peer.DataRateTx))
+				slog.Int64("rx", peer.MaxRxRate),
+				slog.Int64("tx", peer.MaxTxRate))
 		}
 
-		state.sess.Pool.SetBandwidth(peer.DataRateRx, peer.DataRateTx)
+		state.sess.Pool.SetBandwidth(peer.MaxRxRate, peer.MaxTxRate)
 	}
 
 	var sessionReset bool

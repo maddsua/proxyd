@@ -283,8 +283,8 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 				slog.Info("PeerAuthenticator: Update bandwidth",
 					slog.String("slot", auth.slotName),
 					slog.String("peer", peer.displayName()),
-					slog.Int("rx", wantRx),
-					slog.Int("tx", wantTx))
+					slog.Int64("rx_rate", wantRx),
+					slog.Int64("tx_rate", wantTx))
 			}
 
 			peer.Pool.SetBandwidth(wantRx, wantTx)
@@ -309,8 +309,8 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 				slog.String("addr", peer.Dialer.OutboundAddr.String()),
 				slog.String("dns", peer.DNS.ServerName()),
 				slog.Int("max_conn", peer.Pool.ConnectionLimit()),
-				slog.Int("rx_max", rxMax),
-				slog.Int("tx_max", txMax))
+				slog.Int64("rx_rate", rxMax),
+				slog.Int64("tx_rate", txMax))
 		}
 	}
 
@@ -368,11 +368,11 @@ func (slot *peerSlot) displayName() string {
 	return slot.ProxySession.PeerID
 }
 
-func unwrapPeerBandwidth(bw *ProxyPeerBandwidth) (rx, tx int) {
+func unwrapPeerBandwidth(bw *ProxyPeerBandwidth) (rx, tx int64) {
 	if bw == nil {
 		return 0, 0
 	}
-	return max(0, bw.RxBytes), max(0, bw.TxBytes)
+	return max(0, bw.MaxRx), max(0, bw.MaxTx)
 }
 
 func unwrapPeerOutboundIP(addr string) (*proxyd.PeerAddr, error) {

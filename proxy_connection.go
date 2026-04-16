@@ -187,20 +187,34 @@ func (pool *ProxyConnectionPool) WithConnection(conn net.Conn) (net.Conn, error)
 	return ctl.WithConnection(conn)
 }
 
-func (pool *ProxyConnectionPool) SetBandwidth(rxBytes, txBytes int) {
-	pool.bandwidthRx.Store(int64(rxBytes))
-	pool.bandwidthTx.Store(int64(txBytes))
+func (pool *ProxyConnectionPool) SetBandwidth(rx, tx int64) {
+	pool.bandwidthRx.Store(max(0, rx))
+	pool.bandwidthTx.Store(max(0, tx))
 	pool.Rebalance()
 }
 
-func (pool *ProxyConnectionPool) Bandwidth() (rxBytes, txBytes int) {
-	return int(pool.bandwidthRx.Load()), int(pool.bandwidthTx.Load())
+func (pool *ProxyConnectionPool) Bandwidth() (rx, tx int64) {
+	return pool.bandwidthRx.Load(), pool.bandwidthTx.Load()
+}
+
+func (pool *ProxyConnectionPool) SetByteRate(rxBytes, txBytes int64) {
+	pool.SetBandwidth(rxBytes*8, txBytes*8)
+}
+
+func (pool *ProxyConnectionPool) ByteRate() (rxBytes, txBytes int64) {
+	rx, tx := pool.Bandwidth()
+	return max(0, (rx / 8)), max(0, (tx / 8))
 }
 
 func (pool *ProxyConnectionPool) baselineBandwidth() (rxBytes, txBytes int64) {
-	rx, tx := pool.Bandwidth()
-	peers := max(1, pool.nactive)
-	return int64(max(0, rx/peers)), int64(max(0, tx/peers))
+
+	rx, tx := pool.ByteRate()
+
+	if n := int64(pool.nactive); n > 1 {
+		return rx / n, tx / n
+	}
+
+	return rx, tx
 }
 
 func (pool *ProxyConnectionPool) Rebalance() {
@@ -223,15 +237,15 @@ func (pool *ProxyConnectionPool) Rebalance() {
 	//	get used total equivalent bandwidth
 	for _, slot := range activeSlots {
 
-		if used := slot.TrafficRx.Load(); used >= int64(baselineRx) {
+		if used := slot.TrafficRx.Load(); used >= baselineRx {
 			throttledRx++
-		} else if delta := utils.MomentaryEffectiveBandwidth(baselineRx, now, slot.lastBalanced) - used; used > 0 && delta > 0 {
+		} else if delta := utils.MomentaryEffectiveByteRate(baselineRx, now, slot.lastBalanced) - used; used > 0 && delta > 0 {
 			availableRxBytes += delta
 		}
 
-		if used := slot.TrafficTx.Load(); used >= int64(baselineTx) {
+		if used := slot.TrafficTx.Load(); used >= baselineTx {
 			throttledTx++
-		} else if delta := utils.MomentaryEffectiveBandwidth(baselineTx, now, slot.lastBalanced) - used; used > 0 && delta > 0 {
+		} else if delta := utils.MomentaryEffectiveByteRate(baselineTx, now, slot.lastBalanced) - used; used > 0 && delta > 0 {
 			availableTxBytes += delta
 		}
 	}
