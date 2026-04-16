@@ -16,6 +16,22 @@ type serviceSlot struct {
 	err  error
 }
 
+func (slot *serviceSlot) Satisfies(opts ProxyServiceOptions) bool {
+
+	if slot == nil || slot.svc == nil || slot.err != nil {
+		return false
+	} else if slot.svc.ProxyService() != opts.Service {
+		return false
+	}
+
+	switch active := slot.svc.Options().(type) {
+	case http_pkg.HttpServiceOptions:
+		return active.String() == opts.HttpServiceOptions.String()
+	}
+
+	return true
+}
+
 func (slot *serviceSlot) Shutdown(ctx context.Context) error {
 
 	// forcing a slot to shut down anyway after a 3 second wait period;
