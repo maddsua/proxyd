@@ -28,7 +28,7 @@ func (opts HttpServiceOptions) String() string {
 	return fmt.Sprintf("forward=%v", opts.HttpForwardEnabled)
 }
 
-func (opts HttpServiceOptions) AllowMethodList() []string {
+func (opts HttpServiceOptions) allowMethodList() []string {
 
 	methods := []string{http.MethodConnect}
 
@@ -44,7 +44,7 @@ func (opts HttpServiceOptions) AllowMethodList() []string {
 	return methods
 }
 
-func (opts HttpServiceOptions) MethodAllowed(method string) bool {
+func (opts HttpServiceOptions) methodAllowed(method string) bool {
 
 	switch method {
 	case http.MethodConnect:
@@ -183,21 +183,21 @@ func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Requ
 
 	if req.Method == http.MethodOptions {
 
-		wrt.Header().Set("Allow", strings.Join(handler.AllowMethodList(), ", "))
+		wrt.Header().Set("Allow", strings.Join(handler.allowMethodList(), ", "))
 		wrt.Header().Set("Proxy-Authenticate", "Basic")
 		wrt.WriteHeader(http.StatusNoContent)
 
 		return
 	}
 
-	if !handler.MethodAllowed(req.Method) {
+	if !handler.methodAllowed(req.Method) {
 
 		slog.Debug("HTTP: ServeHTTP: Method not allowed",
 			slog.String("proxy_addr", req.Host),
 			slog.String("peer_addr", req.RemoteAddr),
 			slog.String("method", req.Method))
 
-		wrt.Header().Set("Allow", strings.Join(handler.AllowMethodList(), ", "))
+		wrt.Header().Set("Allow", strings.Join(handler.allowMethodList(), ", "))
 		wrt.Header().Set("Proxy-Connection", "Close")
 		wrt.WriteHeader(http.StatusMethodNotAllowed)
 

@@ -198,8 +198,8 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 
 		slot := orch.slots[bindKey]
 
-		// repalce slot if it's empty or if it's service is incompatible
-		if slot == nil || slot.svc == nil || slot.svc.ProxyService() != entry.Service {
+		// repalce slot if it isn't up to date
+		if !slot.Satisfies(entry.ProxyServiceOptions) {
 
 			if slot == nil {
 
