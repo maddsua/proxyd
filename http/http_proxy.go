@@ -293,7 +293,7 @@ func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Requ
 			slog.String("peer_addr", req.RemoteAddr),
 			slog.String("peer_id", sess.PeerID),
 			slog.String("peer_ip", sess.Dialer.OutboundAddr.String()),
-			slog.String("peer_dns", sess.DNS.ServerAddr),
+			slog.String("peer_dns", sess.DNS.ServerName()),
 			slog.String("dst_addr", dstAddr),
 			slog.String("err", err.Error()))
 
