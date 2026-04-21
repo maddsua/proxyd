@@ -18,7 +18,7 @@ import (
 func cmd_rpc(args *utils.ArgList, exitCh <-chan os.Signal) {
 
 	slog.Info("Service starting",
-		slog.String("mode", "rpc server"))
+		slog.String("mode", "rpc"))
 
 	lock := utils.NewInstanceLock("rpc")
 	defer lock.Unlock()

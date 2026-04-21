@@ -17,7 +17,7 @@ import (
 func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 
 	slog.Info("Service starting",
-		slog.String("mode", "radius server"))
+		slog.String("mode", "radius"))
 
 	lock := utils.NewInstanceLock("radius")
 	defer lock.Unlock()

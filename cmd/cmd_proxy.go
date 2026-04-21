@@ -20,7 +20,7 @@ import (
 func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 
 	slog.Info("Service starting",
-		slog.String("mode", "proxy server"))
+		slog.String("mode", "proxy"))
 
 	lock := utils.NewInstanceLock("proxy")
 	defer lock.Unlock()
