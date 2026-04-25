@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -124,14 +123,8 @@ func headerForwardable(header string) bool {
 }
 
 func forwardClient(sess *proxyd.ProxySession) *http.Client {
-
 	attr, _ := sess.Attributes.WithValue(sessionForwardClientAttribute{}, newSessionForwardClient(sess))
-	state, ok := attr.(*sessionForwardClient)
-	if !ok {
-		panic(fmt.Errorf("sessionForwardClient attribute value is of unexpected type: %T", attr))
-	}
-
-	return state.client
+	return attr.(*sessionForwardClient).client
 }
 
 type sessionForwardClientAttribute struct{}

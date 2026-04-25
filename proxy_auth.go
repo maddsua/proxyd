@@ -88,7 +88,7 @@ type ProxySessionAttributes struct {
 	mtx    sync.Mutex
 }
 
-func (attrs *ProxySessionAttributes) WithValue(key any, newAttr ProxyAttribute) (attr ProxyAttribute, replaced bool) {
+func (attrs *ProxySessionAttributes) WithValue(key any, newAttr ProxyAttribute) (attr ProxyAttribute, loaded bool) {
 
 	attrs.mtx.Lock()
 	defer attrs.mtx.Unlock()
@@ -100,13 +100,13 @@ func (attrs *ProxySessionAttributes) WithValue(key any, newAttr ProxyAttribute) 
 	existing := attrs.values[key]
 	if existing != nil {
 		if newAttr.EqualAttribute(existing) {
-			return existing, false
+			return existing, true
 		}
 		existing.Destroy()
 	}
 
 	attrs.values[key] = newAttr
-	return newAttr, true
+	return newAttr, false
 }
 
 func (attrs *ProxySessionAttributes) Reset() {
