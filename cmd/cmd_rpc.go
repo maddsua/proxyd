@@ -185,7 +185,7 @@ func (handler *rpcMethodHandler) OnProxyTable(ctx context.Context, token *rpc.In
 	return &rpc_model.ProxyTable{Services: static.ProxyServiceTable(instance.Services)}, nil
 }
 
-func (handler *rpcMethodHandler) authorizeInstance(token *rpc.InstanceToken) (*RPCClientConfiguration, error) {
+func (handler *rpcMethodHandler) authorizeInstance(token *rpc.InstanceToken) (*RPCClientInstanceConfiguration, error) {
 
 	handler.mtx.Lock()
 	defer handler.mtx.Unlock()

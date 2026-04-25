@@ -36,11 +36,11 @@ type ManagerConfiguration struct {
 }
 
 type RPCServerConfiguration struct {
-	ListenAddr string                   `json:"listen_addr" yaml:"listen_addr"`
-	Instances  []RPCClientConfiguration `json:"instances" yaml:"instances"`
+	ListenAddr string                           `json:"listen_addr" yaml:"listen_addr"`
+	Instances  []RPCClientInstanceConfiguration `json:"instances" yaml:"instances"`
 }
 
-type RPCClientConfiguration struct {
+type RPCClientInstanceConfiguration struct {
 	ID     uuid.UUID        `json:"id" yaml:"id"`
 	Secret rpc.RawSecretKey `json:"secret" yaml:"secret"`
 
