@@ -95,7 +95,7 @@ func ServeConnect(ctx context.Context, conn net.Conn, sess *proxyd.ProxySession,
 		return
 	}
 
-	dstConn, err := sess.DialDestinationContext(context.Background(), "tcp", dstResolved)
+	dstConn, err := sess.DialDestinationContext(ctx, "tcp", dstResolved)
 	if err != nil {
 
 		if err, ok := err.(*proxyd.ConnectionLimitError); ok {
