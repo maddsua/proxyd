@@ -82,11 +82,7 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 			slog.String("peer_addr", req.RemoteAddr),
 			slog.String("peer_id", sess.PeerID))
 
-		_ = tunnelError(conn,
-			wrt.Header().Clone(),
-			http.StatusBadRequest,
-			"Client sent data before tunnel initiated",
-		)
+		_ = tunnelResponse(conn, wrt.Header(), http.StatusBadRequest)
 
 		return
 	}
@@ -96,7 +92,7 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 	rw.Writer.Reset(nil)
 	req.Body = nil
 
-	if err := tunnelAck(conn, wrt.Header().Clone()); err != nil {
+	if err := tunnelResponse(conn, wrt.Header(), http.StatusOK); err != nil {
 		slog.Debug("HTTP: ServeConnect: Write ACK",
 			slog.String("proxy_host", req.Host),
 			slog.String("peer_addr", req.RemoteAddr),
@@ -122,41 +118,30 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 	}
 }
 
-func tunnelAck(writer io.Writer, header http.Header) error {
+func tunnelResponse(writer io.Writer, header http.Header, statusCode int) error {
 
 	resp := http.Response{
-		StatusCode: 200,
-		Status:     "Connection established",
 		ProtoMajor: 1,
 		ProtoMinor: 1,
-		Header:     header,
+		Header:     header.Clone(),
+	}
+
+	resp.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
+
+	if statusCode < http.StatusBadRequest {
+
+		resp.StatusCode = 200
+		resp.Status = "Connection established"
+		resp.Header.Set("Proxy-Connection", "Keep-Alive")
 
 		//	prevents response from writing zero Content-Length, TE or sending Connection: Close
-		Uncompressed:  true,
-		ContentLength: -1,
-	}
+		resp.Uncompressed = true
+		resp.ContentLength = -1
 
-	resp.Header.Set("Proxy-Connection", "Keep-Alive")
-	resp.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
-
-	return resp.Write(writer)
-}
-
-func tunnelError(writer io.Writer, header http.Header, statusCode int, cause string) error {
-
-	resp := http.Response{
-		StatusCode: statusCode,
-		Status:     http.StatusText(statusCode),
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Header:     header,
-	}
-
-	resp.Header.Set("Proxy-Connection", "Close")
-	resp.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
-
-	if cause != "" {
-		resp.Header.Set("X-Reason", cause)
+	} else {
+		resp.StatusCode = statusCode
+		resp.Status = http.StatusText(statusCode)
+		resp.Header.Set("Proxy-Connection", "Close")
 	}
 
 	return resp.Write(writer)
