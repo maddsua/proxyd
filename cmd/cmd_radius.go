@@ -93,7 +93,6 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 			handler.RefreshConfig(cfg.Radius)
 
 			slog.Info("Config updated")
-
 		}
 	}()
 
@@ -117,11 +116,9 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 		errCh <- srv.ListenAndServe()
 	}()
 
-	slog.Info("RADIUS server auth",
-		slog.String("addr", srv.Addr))
-
-	slog.Info("RADIUS server accounting",
-		slog.String("addr", srv.Addr))
+	slog.Info("RADIUS server addrs",
+		slog.String("auth", srv.Addr),
+		slog.String("acct", srv.Addr))
 
 	select {
 	case err := <-errCh:
