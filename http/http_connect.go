@@ -77,7 +77,7 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 
 	if rw.Reader.Buffered() > 0 {
 
-		slog.Debug("HTTP: ServeConnect: Buffered data after request body detected",
+		slog.Debug("HTTP: ServeConnect: Client sent data before tunnel initiated",
 			slog.String("proxy_host", req.Host),
 			slog.String("peer_addr", req.RemoteAddr),
 			slog.String("peer_id", sess.PeerID))
@@ -91,7 +91,7 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 		return
 	}
 
-	//	prevent potential foot-shooting by explicityl disabling them
+	//	prevent potential foot-shooting by explicitly disabling them
 	rw.Reader.Reset(nil)
 	rw.Writer.Reset(nil)
 	req.Body = nil
