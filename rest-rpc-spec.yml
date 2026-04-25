@@ -1,0 +1,269 @@
+openapi: 3.0.0
+info:
+  title: Proxy Service RPC
+  version: 1.0.0
+  description: |
+    API to control a proxy service remotely and manage the proxytable.
+
+    Keep In mind that it is your AAA server that must implement these endpoints.
+
+servers:
+  - url: /proxyd/rpc/v1
+    description: Default RPC prefix
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    RPCError:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Error message
+        cause:
+          type: string
+          description: Optional error cause
+
+    Result:
+      type: object
+      properties:
+        data:
+          nullable: true
+          description: Data payload, if available
+          oneOf:
+            - $ref: '#/components/schemas/ProxyTable'
+        error:
+          nullable: true
+          description: Error messages, if any
+          allOf:
+            - $ref: '#/components/schemas/RPCError'
+
+    InstanceStatus:
+      type: object
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        uptime:
+          type: number
+          description: Uptime in milliseconds
+          example: 752
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceStatus'
+
+    ServiceStatus:
+      type: object
+      properties:
+        bind_addr:
+          type: string
+          example: "142.251.143.14:1080"
+        type:
+          type: string
+          enum: [http, socks]
+          example: socks
+        up:
+          type: boolean
+        peers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PeerStatus'
+        error:
+          type: string
+          description: "Optional error, if a service failed to start"
+
+    PeerStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        enabled:
+          type: boolean
+
+    InstanceTrafficUpdate:
+      type: object
+      properties:
+        deltas:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrafficDelta'
+
+    TrafficDelta:
+      type: object
+      properties:
+        peer_id:
+          type: string
+          format: uuid
+        rx:
+          type: number
+          description: Traffic volume in bytes (received)
+          example: 801561
+        tx:
+          type: number
+          description: Traffic volume in bytes (transmitted)
+          example: 184153
+
+    ProxyTable:
+      type: object
+      required: [services]
+      properties:
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProxyServiceEntry'
+
+    ProxyServiceEntry:
+      type: object
+      required: [bind_addr, service, peers]
+      properties:
+        bind_addr:
+          type: string
+          example: 142.251.143.14:1080
+        service:
+          type: string
+          enum: [http, socks]
+          example: socks
+        http_forward_enabled:
+          type: boolean
+        peers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProxyTablePeerEntry'
+
+    ProxyTablePeerEntry:
+      type: object
+      required: [id, enabled]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userinfo:
+          $ref: '#/components/schemas/ProxyPeerUserInfo'
+        enabled:
+          type: boolean
+        max_connections:
+          type: integer
+          example: 256
+        bandwidth:
+          $ref: '#/components/schemas/ProxyPeerBandwidth'
+        dns:
+          type: string
+          description: DNS server address
+          example: 1.1.1.1:53
+        outbound_addr:
+          type: string
+          description: IP address to use in dials
+          example: 142.251.143.14
+
+    ProxyPeerUserInfo:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        options:
+          $ref: '#/components/schemas/PeerLoginOptions'
+
+    PeerLoginOptions:
+      type: object
+      required: [max_attempts, attempt_window]
+      properties:
+        max_attempts:
+          type: integer
+          description: Max failed attempts before lockout
+          example: 15
+        attempt_window:
+          type: integer
+          description: Reset period in seconds
+          example: 300
+
+    ProxyPeerBandwidth:
+      type: object
+      required: [rx, tx]
+      properties:
+        rx:
+          type: integer
+          description: Max rx speed in bps
+          example: 100000000
+        tx:
+          type: integer
+          description: Max tx speed in bps
+          example: 50000000
+
+security:
+  - bearerAuth: []
+
+paths:
+  /ready:
+    get:
+      summary: Verify auth server and token
+      responses:
+        '204':
+          description: Token is valid
+        '401':
+          description: Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RPCError'
+
+  /status:
+    post:
+      summary: Notify instance readiness and uptime
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstanceStatus'
+      responses:
+        '204':
+          description: Status received successfully
+        'default':
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RPCError'
+
+  /traffic:
+    post:
+      summary: Report peer traffic volume
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstanceTrafficUpdate'
+      responses:
+        '204':
+          description: Traffic data received
+        'default':
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RPCError'
+
+  /proxytable:
+    get:
+      summary: Request current proxy configuration
+      responses:
+        '200':
+          description: The current proxytable instance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'

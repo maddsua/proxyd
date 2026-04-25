@@ -70,7 +70,7 @@ Refer to the [RADIUS section](./radius.md) to learn more about autorizing users 
 
 proxytables is a REST-based API that allows to configure literally everything here without relying on third-party tools or protocols.
 
-It is described [here](./rpc_spec.md)
+Please note that in this model it is a proxyd instance that's calling your AAA-server, not the other way around. This means, that your serve MUST implement the endpoints as descibed in [the spec](rest-rpc-spec.yml)
 
 ### Configuration
 
