@@ -18,7 +18,7 @@ type Client struct {
 	Secret   string
 }
 
-func (auth *Client) Authorize(ctx context.Context, params AuthorizationParams) (*PeerAuthorization, error) {
+func (auth *Client) Authorize(ctx context.Context, params PeerCredentials) (*PeerAuthorization, error) {
 
 	addr := auth.AuthAddr
 	if addr == "" {
@@ -27,7 +27,7 @@ func (auth *Client) Authorize(ctx context.Context, params AuthorizationParams) (
 
 	req := radius.New(radius.CodeAccessRequest, []byte(auth.Secret))
 
-	if err := params.ToPacket(req); err != nil {
+	if err := params.MarshalPacket(req); err != nil {
 		return nil, err
 	}
 
@@ -40,17 +40,17 @@ func (auth *Client) Authorize(ctx context.Context, params AuthorizationParams) (
 	case radius.CodeAccessReject:
 		return nil, &proxyd.ProxyCredentialsError{}
 	case radius.CodeAccessAccept:
-		return PeerAuthFromPacket(reply), nil
+		return ParsePeerAuth(reply), nil
 	default:
 		return nil, fmt.Errorf("unexpected reply code: %v", reply.Code)
 	}
 }
 
-func (auth *Client) AccountTraffic(ctx context.Context, params AccountingParams) error {
+func (auth *Client) AccountTraffic(ctx context.Context, params AccountingDelta) error {
 
 	req := radius.New(radius.CodeAccountingRequest, []byte(auth.Secret))
 
-	if err := params.ToPacket(req); err != nil {
+	if err := params.MarshalPacket(req); err != nil {
 		return err
 	}
 
@@ -112,7 +112,7 @@ func (auth *Client) SendCoA(peer *PeerAuthorization) error {
 
 	packet := radius.New(radius.CodeCoARequest, []byte(auth.Secret))
 
-	if err := peer.ToPacket(packet); err != nil {
+	if err := peer.MarshalPacket(packet); err != nil {
 		return err
 	}
 

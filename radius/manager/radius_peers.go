@@ -29,7 +29,7 @@ func (entry *peerEntry) reset() {
 }
 
 type peerCredentialsMiss struct {
-	radius_pkg.AuthorizationParams
+	radius_pkg.PeerCredentials
 	expires time.Time
 }
 
@@ -48,7 +48,7 @@ type peerAuthenticator struct {
 
 func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, proxyHost net.Addr, clientIP net.IP, username, password string) (*proxyd.ProxySession, error) {
 
-	params := radius_pkg.AuthorizationParams{
+	params := radius_pkg.PeerCredentials{
 		Username:  username,
 		Password:  password,
 		UserAddr:  &net.IPAddr{IP: clientIP},
@@ -71,8 +71,8 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, pro
 		if _, ok := err.(*proxyd.ProxyCredentialsError); ok {
 
 			miss := peerCredentialsMiss{
-				AuthorizationParams: params,
-				expires:             time.Now().Add(DefaultSessionTTL),
+				PeerCredentials: params,
+				expires:         time.Now().Add(DefaultSessionTTL),
 			}
 
 			slog.Debug("RADIUS: Invalid credentials",
@@ -354,7 +354,7 @@ func (auth *peerAuthenticator) replyDAC(req *radius.Request) *radius.Packet {
 			return reply
 		}
 
-		if err := auth.ChangeSessionAuthority(req.Context(), radius_pkg.PeerAuthFromPacket(req.Packet)); err != nil {
+		if err := auth.ChangeSessionAuthority(req.Context(), radius_pkg.ParsePeerAuth(req.Packet)); err != nil {
 			reply := req.Response(radius.CodeCoANAK)
 			rfc3576.ErrorCause_Set(reply, rfc3576.ErrorCause_Value_SessionContextNotFound)
 			return reply

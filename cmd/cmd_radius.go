@@ -157,7 +157,7 @@ func (handler *radiusHandler) ServeRADIUS(wrt radius.ResponseWriter, req *radius
 
 func (handler *radiusHandler) HandleAccessRequest(req *radius.Request) *radius.Packet {
 
-	params := radius_pkg.AuthorizationParamsFromPacket(req.Packet)
+	params := radius_pkg.ParsePeerCredentials(req.Packet)
 
 	for _, user := range handler.userList() {
 
@@ -216,7 +216,7 @@ func (handler *radiusHandler) HandleAccessRequest(req *radius.Request) *radius.P
 
 		reply := req.Response(radius.CodeAccessAccept)
 
-		if err := user.ToPeer().ToPacket(reply); err != nil {
+		if err := user.ToPeer().MarshalPacket(reply); err != nil {
 			slog.Warn("RADIUS server: Copy peer attributes",
 				slog.String("client", req.RemoteAddr.String()),
 				slog.String("username", params.Username),
@@ -231,7 +231,7 @@ func (handler *radiusHandler) HandleAccessRequest(req *radius.Request) *radius.P
 
 func (handler *radiusHandler) HandleAccountingRequest(req *radius.Request) *radius.Packet {
 
-	acct := radius_pkg.ParseAccountingParams(req.Packet)
+	acct := radius_pkg.ParseAccountingDelta(req.Packet)
 
 	slog.Info("RADIUS server: Accounting",
 		slog.String("client", req.RemoteAddr.String()),

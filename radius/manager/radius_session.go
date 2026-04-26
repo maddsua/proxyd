@@ -21,7 +21,7 @@ const DefaultReauthPeriod = 90 * time.Second
 const DefaultAccountingInterval = 30 * time.Second
 
 type peerSessionState struct {
-	params radius_pkg.AuthorizationParams
+	params radius_pkg.PeerCredentials
 	sess   proxyd.ProxySession
 
 	init    atomic.Bool
@@ -154,21 +154,10 @@ func (state *peerSessionState) Refresh(ctx context.Context, peer *radius_pkg.Pee
 
 func (state *peerSessionState) Account(ctx context.Context) {
 
-	if state.acctSid == "" && state.acctUid == "" {
-		return
-	}
-
 	state.acctMtx.Lock()
 
-	rx := state.sess.Pool.TrafficRx.Load()
-	tx := state.sess.Pool.TrafficTx.Load()
-
-	acctType := rfc2866.AcctStatusType_Value_InterimUpdate
-	if state.done.Load() {
-		acctType = rfc2866.AcctStatusType_Value_Stop
-	} else if state.lastAccounted.IsZero() {
-		acctType = rfc2866.AcctStatusType_Value_Start
-	} else if time.Since(state.lastAccounted) < DefaultAccountingInterval || rx <= 0 && tx <= 0 {
+	params, valid := state.prepareAcctLocked()
+	if !valid {
 		state.acctMtx.Unlock()
 		return
 	}
@@ -180,28 +169,54 @@ func (state *peerSessionState) Account(ctx context.Context) {
 		defer state.acctMtx.Unlock()
 		defer state.acctWg.Done()
 
-		if err := state.upstream.AccountTraffic(ctx, radius_pkg.AccountingParams{
-			Type:             acctType,
-			SessionID:        state.acctSid,
-			ChargeableUserID: state.acctUid,
-			RxBytes:          uint32(rx),
-			TxBytes:          uint32(tx),
-		}); err != nil {
+		if err := state.upstream.AccountTraffic(ctx, params); err != nil {
 
 			slog.Error("RADIUS: Account traffic",
 				slog.String("peer_id", state.sess.PeerID),
 				slog.String("acct_id", state.acctSid),
-				slog.String("acct_type", acctType.String()),
+				slog.String("acct_type", params.Type.String()),
 				slog.String("err", err.Error()))
 
 			return
 		}
 
-		state.sess.Pool.TrafficRx.Add(-rx)
-		state.sess.Pool.TrafficTx.Add(-tx)
+		state.sess.Pool.TrafficRx.Add(-params.RxBytes)
+		state.sess.Pool.TrafficTx.Add(-params.TxBytes)
 
 		state.lastAccounted = time.Now()
 	}()
+}
+
+func (state *peerSessionState) prepareAcctLocked() (radius_pkg.AccountingDelta, bool) {
+
+	params := radius_pkg.AccountingDelta{
+		ChargeableUserID: state.acctUid,
+		SessionID:        state.acctSid,
+		RxBytes:          state.sess.Pool.TrafficRx.Load(),
+		TxBytes:          state.sess.Pool.TrafficTx.Load(),
+	}
+
+	// skip any accounting if there's no session identification
+	if params.ChargeableUserID == "" && params.SessionID == "" {
+		return radius_pkg.AccountingDelta{}, false
+	}
+
+	// always trigger accounting for freshly started and stopped sessions
+	if state.done.Load() {
+		params.Type = rfc2866.AcctStatusType_Value_Stop
+		return params, true
+	} else if state.lastAccounted.IsZero() {
+		params.Type = rfc2866.AcctStatusType_Value_Start
+		return params, true
+	}
+
+	// only report the rest if there is a traffic delta and it wasn't reported too recently
+	if !params.IsZero() && time.Since(state.lastAccounted) >= DefaultAccountingInterval {
+		params.Type = rfc2866.AcctStatusType_Value_InterimUpdate
+		return params, true
+	}
+
+	return radius_pkg.AccountingDelta{}, false
 }
 
 func (state *peerSessionState) Reauthenticate(ctx context.Context) error {

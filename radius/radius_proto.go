@@ -17,14 +17,14 @@ import (
 	"github.com/maddsua/proxyd/utils"
 )
 
-type AuthorizationParams struct {
+type PeerCredentials struct {
 	Username  string
 	Password  string
 	ProxyHost net.Addr
 	UserAddr  net.Addr
 }
 
-func (params *AuthorizationParams) Hash() string {
+func (params *PeerCredentials) Hash() string {
 
 	hasher := sha1.New()
 
@@ -42,7 +42,7 @@ func (params *AuthorizationParams) Hash() string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func (params *AuthorizationParams) ToPacket(packet *radius.Packet) error {
+func (params *PeerCredentials) MarshalPacket(packet *radius.Packet) error {
 
 	if err := rfc2865.ServiceType_Set(packet, rfc2865.ServiceType_Value_FramedUser); err != nil {
 		return fmt.Errorf("rfc2865.ServiceType_Set: %v", err)
@@ -84,9 +84,9 @@ func (params *AuthorizationParams) ToPacket(packet *radius.Packet) error {
 	return nil
 }
 
-func AuthorizationParamsFromPacket(packet *radius.Packet) *AuthorizationParams {
+func ParsePeerCredentials(packet *radius.Packet) *PeerCredentials {
 
-	params := AuthorizationParams{
+	params := PeerCredentials{
 		Username: rfc2865.UserName_GetString(packet),
 		Password: rfc2865.UserPassword_GetString(packet),
 	}
@@ -123,7 +123,7 @@ type PeerAuthorization struct {
 	ConnectionLimit  int
 }
 
-func (peer *PeerAuthorization) ToPacket(packet *radius.Packet) error {
+func (peer *PeerAuthorization) MarshalPacket(packet *radius.Packet) error {
 
 	if uid := peer.ChargeableUserID; uid != "" {
 		if err := rfc4372.ChargeableUserIdentity_SetString(packet, uid); err != nil {
@@ -186,7 +186,7 @@ func (peer *PeerAuthorization) ToPacket(packet *radius.Packet) error {
 	return nil
 }
 
-func PeerAuthFromPacket(packet *radius.Packet) *PeerAuthorization {
+func ParsePeerAuth(packet *radius.Packet) *PeerAuthorization {
 
 	peer := PeerAuthorization{
 		ChargeableUserID: rfc4372.ChargeableUserIdentity_GetString(packet),
@@ -207,15 +207,19 @@ func PeerAuthFromPacket(packet *radius.Packet) *PeerAuthorization {
 	return &peer
 }
 
-type AccountingParams struct {
+type AccountingDelta struct {
 	Type             rfc2866.AcctStatusType
 	SessionID        string
 	ChargeableUserID string
-	RxBytes          uint32
-	TxBytes          uint32
+	RxBytes          int64
+	TxBytes          int64
 }
 
-func (params *AccountingParams) ToPacket(packet *radius.Packet) error {
+func (params *AccountingDelta) IsZero() bool {
+	return params.RxBytes <= 0 && params.TxBytes <= 0
+}
+
+func (params *AccountingDelta) MarshalPacket(packet *radius.Packet) error {
 
 	if err := rfc2866.AcctStatusType_Set(packet, params.Type); err != nil {
 		return fmt.Errorf("rfc2866.AcctStatusType_Set: %v", err)
@@ -246,12 +250,12 @@ func (params *AccountingParams) ToPacket(packet *radius.Packet) error {
 	return nil
 }
 
-func ParseAccountingParams(packet *radius.Packet) *AccountingParams {
-	return &AccountingParams{
+func ParseAccountingDelta(packet *radius.Packet) *AccountingDelta {
+	return &AccountingDelta{
 		Type:             rfc2866.AcctStatusType_Get(packet),
 		SessionID:        rfc2866.AcctSessionID_GetString(packet),
 		ChargeableUserID: rfc4372.ChargeableUserIdentity_GetString(packet),
-		RxBytes:          uint32(rfc2866.AcctInputOctets_Get(packet)),
-		TxBytes:          uint32(rfc2866.AcctOutputOctets_Get(packet)),
+		RxBytes:          int64(rfc2866.AcctInputOctets_Get(packet)),
+		TxBytes:          int64(rfc2866.AcctOutputOctets_Get(packet)),
 	}
 }
