@@ -2,7 +2,6 @@ package proxytable
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"maps"
 	"sync"
@@ -14,13 +13,10 @@ import (
 )
 
 type Orchestrator struct {
-	init atomic.Bool
-	done atomic.Bool
-
-	doneChan chan struct{}
-
-	slots   map[string]*serviceSlot
-	slotMtx sync.Mutex
+	mtx           sync.Mutex
+	slots         map[string]*serviceSlot
+	rebalanceInit atomic.Bool
+	rebalanceDone chan struct{}
 
 	deltas   map[string]*TrafficDelta
 	deltaMtx sync.Mutex
@@ -28,34 +24,7 @@ type Orchestrator struct {
 	dnsTester proxyd.DNSTester
 }
 
-func (orch *Orchestrator) initEx() error {
-
-	if orch.done.Load() {
-		return errors.New("orchestrator done")
-	} else if !orch.init.CompareAndSwap(false, true) {
-		return nil
-	}
-
-	orch.doneChan = make(chan struct{})
-	orch.slots = map[string]*serviceSlot{}
-	orch.deltas = map[string]*TrafficDelta{}
-
-	go orch.rebalanceRoutine()
-
-	return nil
-}
-
 func (orch *Orchestrator) rebalanceRoutine() {
-
-	var rebalance = func() {
-
-		orch.slotMtx.Lock()
-		defer orch.slotMtx.Unlock()
-
-		for _, slot := range orch.slots {
-			slot.auth.RebalancePools()
-		}
-	}
 
 	const interval = time.Second
 
@@ -70,7 +39,7 @@ func (orch *Orchestrator) rebalanceRoutine() {
 
 			started := time.Now()
 
-			rebalance()
+			orch.Rebalance()
 
 			elapsed := time.Since(started)
 			if elapsed > interval && elapsed > longestDelay {
@@ -85,16 +54,26 @@ func (orch *Orchestrator) rebalanceRoutine() {
 				longestDelay = 0
 			}
 
-		case <-orch.doneChan:
+		case <-orch.rebalanceDone:
 			return
 		}
 	}
 }
 
+func (orch *Orchestrator) Rebalance() {
+
+	orch.mtx.Lock()
+	defer orch.mtx.Unlock()
+
+	for _, slot := range orch.slots {
+		slot.auth.RebalancePools()
+	}
+}
+
 func (orch *Orchestrator) Services() []ServiceStatus {
 
-	orch.slotMtx.Lock()
-	defer orch.slotMtx.Unlock()
+	orch.mtx.Lock()
+	defer orch.mtx.Unlock()
 
 	var entries []ServiceStatus
 
@@ -128,8 +107,8 @@ func (orch *Orchestrator) Services() []ServiceStatus {
 
 func (orch *Orchestrator) CollectDeltas() []TrafficDelta {
 
-	orch.slotMtx.Lock()
-	defer orch.slotMtx.Unlock()
+	orch.mtx.Lock()
+	defer orch.mtx.Unlock()
 
 	for _, slot := range orch.slots {
 		orch.collectSlotDeltas(slot)
@@ -156,6 +135,10 @@ func (orch *Orchestrator) collectSlotDeltas(slot *serviceSlot) {
 
 func (orch *Orchestrator) sumDelta(next TrafficDelta) {
 
+	if orch.deltas == nil {
+		orch.deltas = map[string]*TrafficDelta{}
+	}
+
 	delta := orch.deltas[next.PeerID]
 	if delta == nil {
 		delta = &TrafficDelta{PeerID: next.PeerID}
@@ -178,15 +161,20 @@ func (orch *Orchestrator) ReturnDeltas(entries []TrafficDelta) {
 
 func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServiceEntry) error {
 
-	if err := orch.initEx(); err != nil {
-		return err
-	}
-
-	orch.slotMtx.Lock()
-	defer orch.slotMtx.Unlock()
+	orch.mtx.Lock()
+	defer orch.mtx.Unlock()
 
 	staleMap := map[string]*serviceSlot{}
-	maps.Copy(staleMap, orch.slots)
+	if orch.slots == nil {
+		orch.slots = map[string]*serviceSlot{}
+	} else {
+		maps.Copy(staleMap, orch.slots)
+	}
+
+	if orch.rebalanceInit.CompareAndSwap(false, true) {
+		orch.rebalanceDone = make(chan struct{})
+		go orch.rebalanceRoutine()
+	}
 
 	// compare the new proxy table agains existing state
 	for _, entry := range services {
@@ -290,14 +278,12 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 
 func (orch *Orchestrator) Shutdown(ctx context.Context) error {
 
-	if !orch.init.Load() || !orch.done.CompareAndSwap(false, true) {
-		return nil
+	orch.mtx.Lock()
+	defer orch.mtx.Unlock()
+
+	if orch.rebalanceInit.CompareAndSwap(true, false) {
+		close(orch.rebalanceDone)
 	}
-
-	orch.slotMtx.Lock()
-	defer orch.slotMtx.Unlock()
-
-	close(orch.doneChan)
 
 	if len(orch.slots) == 0 {
 		return nil
