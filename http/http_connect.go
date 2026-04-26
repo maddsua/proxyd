@@ -92,7 +92,7 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 			slog.String("peer_addr", req.RemoteAddr),
 			slog.String("peer_id", sess.PeerID))
 
-		proxySetErrorMessage(wrt.Header(), "client sent data before tunnel initiated")
+		setErrorMessage(wrt.Header(), "client sent data before tunnel initiated")
 
 		_ = tunnelResponse(conn, wrt.Header(), http.StatusBadRequest)
 

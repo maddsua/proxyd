@@ -22,7 +22,7 @@ func Test_CredentialsParse_1(t *testing.T) {
 		return
 	}
 
-	userinfo, err := http_pkg.ProxyRequestCredentials(req)
+	userinfo, err := http_pkg.RequestCredentials(req)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 		return
@@ -57,7 +57,7 @@ func Test_CredentialsParse_2(t *testing.T) {
 		return
 	}
 
-	userinfo, err := http_pkg.ProxyRequestCredentials(req)
+	userinfo, err := http_pkg.RequestCredentials(req)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 		return
@@ -93,7 +93,7 @@ func Test_ConnectDestinationParse_1(t *testing.T) {
 		return
 	}
 
-	dest, err := http_pkg.ProxyDestinationAddr(req)
+	dest, err := http_pkg.DestinationAddr(req)
 	if err != nil {
 		t.Fatalf("destination: %v", err)
 		return
@@ -118,7 +118,7 @@ func Test_ConnectDestinationParse_2(t *testing.T) {
 		return
 	}
 
-	dest, err := http_pkg.ProxyDestinationAddr(req)
+	dest, err := http_pkg.DestinationAddr(req)
 	if err != nil {
 		t.Fatalf("destination: %v", err)
 		return
@@ -149,7 +149,7 @@ func Test_ForwardDestinationParse_1(t *testing.T) {
 		return
 	}
 
-	dest, err := http_pkg.ProxyDestinationAddr(req)
+	dest, err := http_pkg.DestinationAddr(req)
 	if err != nil {
 		t.Fatalf("destination: %v", err)
 		return
@@ -179,7 +179,7 @@ func Test_ForwardDestinationParse_2(t *testing.T) {
 		return
 	}
 
-	dest, err := http_pkg.ProxyDestinationAddr(req)
+	dest, err := http_pkg.DestinationAddr(req)
 	if err != nil {
 		t.Fatalf("destination: %v", err)
 		return
@@ -209,7 +209,7 @@ func Test_ForwardDestinationParse_3(t *testing.T) {
 		return
 	}
 
-	dest, err := http_pkg.ProxyDestinationAddr(req)
+	dest, err := http_pkg.DestinationAddr(req)
 	if err != nil {
 		t.Fatalf("destination: %v", err)
 		return

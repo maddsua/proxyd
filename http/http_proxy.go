@@ -207,7 +207,7 @@ func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Requ
 	handler.wg.Add(1)
 	defer handler.wg.Done()
 
-	userinfo, err := ProxyRequestCredentials(req)
+	userinfo, err := RequestCredentials(req)
 	if err != nil || userinfo == nil {
 
 		if err != nil {
@@ -227,7 +227,7 @@ func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	sess, err := handler.auth.AuthenticateWithPassword(req.Context(), handler.hostAddr, ProxyClientIP(req), userinfo.Username, userinfo.Password)
+	sess, err := handler.auth.AuthenticateWithPassword(req.Context(), handler.hostAddr, ClientIP(req), userinfo.Username, userinfo.Password)
 	if err != nil {
 
 		if err, ok := err.(*proxyd.ProxyCredentialsError); ok {
@@ -271,7 +271,7 @@ func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	dstAddr, err := ProxyDestinationAddr(req)
+	dstAddr, err := DestinationAddr(req)
 	if err != nil {
 
 		slog.Debug("HTTP: ServeHTTP: ProxyDestination",
@@ -312,7 +312,6 @@ func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Requ
 	switch req.Method {
 	case http.MethodConnect:
 		ServeConnect(wrt, req, sess, dstResolved)
-
 	default:
 		ServeForward(wrt, req, sess)
 	}

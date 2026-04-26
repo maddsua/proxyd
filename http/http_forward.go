@@ -31,7 +31,7 @@ func ServeForward(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 		return
 	}
 
-	fwreq.Header = copyForwardRequestHeaders(req.Header)
+	fwreq.Header = cloneForwardHeaders(req.Header)
 
 	fwresp, err := forwardClient(sess).Do(fwreq.WithContext(req.Context()))
 	if err != nil {
@@ -57,9 +57,9 @@ func ServeForward(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 		slog.String("dst_host", req.URL.Host),
 		slog.String("dns", sess.DNS.ServerName()))
 
-	copyResponseHeaders(wrt, fwresp)
+	writeResponseHeaders(wrt, fwresp)
 
-	if err := forwardBodyStream(req.Context(), wrt, fwresp.Body); err != nil {
+	if err := streamResponseBody(req.Context(), wrt, fwresp.Body); err != nil {
 		slog.Debug("HTTP: ServeForward: ForwardBodyStream",
 			slog.String("proxy_host", req.Host),
 			slog.String("peer_addr", req.RemoteAddr),
@@ -70,7 +70,7 @@ func ServeForward(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 	}
 }
 
-func copyForwardRequestHeaders(src http.Header) http.Header {
+func cloneForwardHeaders(src http.Header) http.Header {
 
 	fwHeader := make(http.Header)
 
@@ -88,7 +88,7 @@ func copyForwardRequestHeaders(src http.Header) http.Header {
 	return fwHeader
 }
 
-func copyResponseHeaders(wrt http.ResponseWriter, resp *http.Response) {
+func writeResponseHeaders(wrt http.ResponseWriter, resp *http.Response) {
 
 	for key, values := range resp.Header {
 
@@ -120,6 +120,39 @@ func headerForwardable(header string) bool {
 	default:
 		return true
 	}
+}
+
+func streamResponseBody(ctx context.Context, dst io.Writer, src io.Reader) error {
+
+	buff := make([]byte, math.MaxUint16)
+
+	for ctx.Err() == nil {
+
+		readBytes, err := src.Read(buff)
+
+		if readBytes > 0 {
+
+			if _, err := dst.Write(buff[:readBytes]); err != nil {
+				if ctx.Err() != nil {
+					break
+				}
+				return err
+			}
+
+			if flusher, ok := dst.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+
+		if err != nil {
+			if err == io.EOF || ctx.Err() != nil {
+				break
+			}
+			return err
+		}
+	}
+
+	return nil
 }
 
 func forwardClient(sess *proxyd.ProxySession) *http.Client {
@@ -165,37 +198,4 @@ func newSessionForwardClient(sess *proxyd.ProxySession) *sessionForwardClient {
 			},
 		},
 	}
-}
-
-func forwardBodyStream(ctx context.Context, dst io.Writer, src io.Reader) error {
-
-	buff := make([]byte, math.MaxUint16)
-
-	for ctx.Err() == nil {
-
-		readBytes, err := src.Read(buff)
-
-		if readBytes > 0 {
-
-			if _, err := dst.Write(buff[:readBytes]); err != nil {
-				if ctx.Err() != nil {
-					break
-				}
-				return err
-			}
-
-			if flusher, ok := dst.(http.Flusher); ok {
-				flusher.Flush()
-			}
-		}
-
-		if err != nil {
-			if err == io.EOF || ctx.Err() != nil {
-				break
-			}
-			return err
-		}
-	}
-
-	return nil
 }
