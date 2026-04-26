@@ -34,26 +34,19 @@ type peerCredentialsMiss struct {
 }
 
 type peerAuthenticator struct {
-	init   atomic.Bool
-	done   atomic.Bool
-	ctx    context.Context
-	cancel context.CancelFunc
+	Client radius_pkg.Client
 
-	index map[string]*peerEntry
-	mtx   sync.Mutex
-	wg    sync.WaitGroup
+	mtx           sync.Mutex
+	wg            sync.WaitGroup
+	index         map[string]*peerEntry
+	refreshInit   atomic.Bool
+	refreshCtx    context.Context
+	cancelRefresh context.CancelFunc
 
 	dnsTester proxyd.DNSTester
-	client    radius_pkg.Client
 }
 
 func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, proxyHost net.Addr, clientIP net.IP, username, password string) (*proxyd.ProxySession, error) {
-
-	if err := auth.initEx(); err != nil {
-		return nil, err
-	} else if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 
 	params := radius_pkg.AuthorizationParams{
 		Username:  username,
@@ -72,7 +65,7 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, pro
 		return nil, &proxyd.ProxyCredentialsError{}
 	}
 
-	peer, err := auth.client.Authorize(ctx, params)
+	peer, err := auth.Client.Authorize(ctx, params)
 	if err != nil {
 
 		if _, ok := err.(*proxyd.ProxyCredentialsError); ok {
@@ -99,7 +92,7 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, pro
 		lastUserActivity: time.Now(),
 		slotID:           fmt.Sprintf("%v", proxyHost),
 		dnsTester:        &auth.dnsTester,
-		upstream:         &auth.client,
+		upstream:         &auth.Client,
 	}
 
 	if err := state.Refresh(ctx, peer); err != nil {
@@ -116,37 +109,24 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, pro
 	return &state.sess, nil
 }
 
-func (auth *peerAuthenticator) initEx() error {
-
-	if auth.done.Load() {
-		return errors.New("authenticator closed")
-	} else if !auth.init.CompareAndSwap(false, true) {
-		return nil
-	}
-
-	auth.ctx, auth.cancel = context.WithCancel(context.Background())
-	auth.index = map[string]*peerEntry{}
-
-	ticker := time.NewTicker(time.Second)
-
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				auth.refreshIndex(auth.ctx)
-			case <-auth.ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return nil
-}
-
 func (auth *peerAuthenticator) acquireIndexEntry(key string) *peerEntry {
 
 	auth.mtx.Lock()
 	defer auth.mtx.Unlock()
+
+	if auth.refreshInit.CompareAndSwap(false, true) {
+		auth.refreshCtx, auth.cancelRefresh = context.WithCancel(context.Background())
+		go auth.indexRefreshRoutine()
+	}
+
+	return auth.acquireIndexEntryLocked(key)
+}
+
+func (auth *peerAuthenticator) acquireIndexEntryLocked(key string) *peerEntry {
+
+	if auth.index == nil {
+		auth.index = map[string]*peerEntry{}
+	}
 
 	entry := auth.index[key]
 	if entry == nil {
@@ -163,6 +143,10 @@ func (auth *peerAuthenticator) removeIndexEntry(key string) {
 
 	auth.mtx.Lock()
 	defer auth.mtx.Unlock()
+
+	if auth.index == nil {
+		return
+	}
 
 	if entry := auth.index[key]; entry != nil {
 		entry.mtx.Lock()
@@ -184,6 +168,21 @@ func (auth *peerAuthenticator) getIndexAccountingSession(acctID string) *peerSes
 	}
 
 	return nil
+}
+
+func (auth *peerAuthenticator) indexRefreshRoutine() {
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			auth.refreshIndex(auth.refreshCtx)
+		case <-auth.refreshCtx.Done():
+			return
+		}
+	}
 }
 
 func (auth *peerAuthenticator) refreshIndex(ctx context.Context) {
@@ -372,23 +371,14 @@ func (auth *peerAuthenticator) replyDAC(req *radius.Request) *radius.Packet {
 
 func (auth *peerAuthenticator) Shutdown(ctx context.Context) error {
 
-	if !auth.init.Load() {
-		return nil
-	}
-
-	if !auth.done.CompareAndSwap(false, true) {
-		return nil
-	}
-
-	defer auth.done.Store(false)
-	defer auth.init.Store(false)
-
-	auth.cancel()
-
 	auth.mtx.Lock()
 	defer auth.mtx.Unlock()
 
-	for key, entry := range auth.index {
+	if auth.refreshInit.CompareAndSwap(true, false) {
+		auth.cancelRefresh()
+	}
+
+	for _, entry := range auth.index {
 
 		entry.mtx.Lock()
 
@@ -396,10 +386,10 @@ func (auth *peerAuthenticator) Shutdown(ctx context.Context) error {
 			sess.Terminate(ctx)
 		}
 
-		delete(auth.index, key)
-
 		entry.mtx.Unlock()
 	}
+
+	auth.index = nil
 
 	return ctx.Err()
 }

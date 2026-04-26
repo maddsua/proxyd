@@ -37,56 +37,62 @@ type Manager struct {
 	Slots []ProxySlotOptions
 
 	mtx      sync.Mutex
-	init     atomic.Bool
-	done     atomic.Bool
-	doneChan chan struct{}
-	auth     peerAuthenticator
-	dac      radius.PacketServer
+	execInit atomic.Bool
+	execDone chan struct{}
+
+	auth *peerAuthenticator
+	dac  *radius.PacketServer
+
 	services map[string]proxyd.ProxyService
 }
 
 func (mgr *Manager) Exec() error {
 
-	if err := mgr.SetSlots(context.Background(), mgr.Slots); err != nil {
+	if err := mgr.initExec(); err != nil {
 		return err
 	}
 
-	<-mgr.doneChan
+	<-mgr.execDone
 
 	return nil
 }
 
-func (mgr *Manager) initEx() error {
+func (mgr *Manager) initExec() error {
 
-	if !mgr.init.CompareAndSwap(false, true) {
+	mgr.mtx.Lock()
+	defer mgr.mtx.Unlock()
+
+	if !mgr.execInit.CompareAndSwap(false, true) {
+		return errors.New("manager already running")
+	}
+
+	if err := mgr.setSlotsLocked(context.Background(), mgr.Slots); err != nil {
+		return err
+	}
+
+	if err := mgr.initDac(); err != nil {
+		return err
+	}
+
+	mgr.execDone = make(chan struct{})
+
+	return nil
+}
+
+func (mgr *Manager) initDac() error {
+
+	dacAddr := mgr.Opts.DacAddr
+	if dacAddr == "" {
 		return nil
-	} else if mgr.done.Load() {
-		return errors.New("manager done")
 	}
 
-	mgr.doneChan = make(chan struct{})
-
-	opts := mgr.Opts
-
-	mgr.auth.client = radiuspkg.Client{
-		AuthAddr: opts.AuthAddr,
-		AcctAddr: opts.AcctAddr,
-		Secret:   opts.Secret,
+	secret := mgr.Opts.Secret
+	if secret == "" {
+		return fmt.Errorf("no dac secret set")
 	}
 
-	if opts.DacAddr != "" {
-		if err := mgr.initDac(opts.DacAddr, opts.Secret); err != nil {
-			return fmt.Errorf("init dac: %v", err)
-		}
-	}
-
-	return nil
-}
-
-func (mgr *Manager) initDac(addr, secret string) error {
-
-	mgr.dac = radius.PacketServer{
-		Addr:         addr,
+	srv := &radius.PacketServer{
+		Addr:         dacAddr,
 		SecretSource: radius.StaticSecretSource([]byte(secret)),
 		Handler:      mgr.auth.DACHandler(),
 		ErrorLog: utils.LegacyLogger{
@@ -95,26 +101,38 @@ func (mgr *Manager) initDac(addr, secret string) error {
 		},
 	}
 
-	conn, err := net.ListenPacket("udp", addr)
+	conn, err := net.ListenPacket("udp", dacAddr)
 	if err != nil {
 		return err
 	}
 
 	go func() {
 		defer conn.Close()
-		mgr.dac.Serve(conn)
+		srv.Serve(conn)
 	}()
+
+	mgr.dac = srv
 
 	return nil
 }
 
-func (mgr *Manager) SetSlots(ctx context.Context, slots []ProxySlotOptions) error {
+func (mgr *Manager) setSlotsLocked(ctx context.Context, slots []ProxySlotOptions) error {
 
-	mgr.mtx.Lock()
-	defer mgr.mtx.Unlock()
+	if mgr.auth == nil {
 
-	if err := mgr.initEx(); err != nil {
-		return err
+		client := radiuspkg.Client{
+			AuthAddr: mgr.Opts.AuthAddr,
+			AcctAddr: mgr.Opts.AcctAddr,
+			Secret:   mgr.Opts.Secret,
+		}
+
+		if client.AuthAddr == "" {
+			return fmt.Errorf("no auth/acct server addr set")
+		} else if client.Secret == "" {
+			return fmt.Errorf("no auth/acct secret set")
+		}
+
+		mgr.auth = &peerAuthenticator{Client: client}
 	}
 
 	staleMap := map[string]proxyd.ProxyService{}
@@ -147,7 +165,7 @@ func (mgr *Manager) SetSlots(ctx context.Context, slots []ProxySlotOptions) erro
 				slog.String("type", svc.ProxyService()))
 		}
 
-		svc, err := newService(entry, &mgr.auth)
+		svc, err := newService(entry, mgr.auth)
 		if err != nil {
 			slog.Error("RADIUS Manager: Start service",
 				slog.String("bind_addr", entry.BindAddr),
@@ -183,16 +201,20 @@ func (mgr *Manager) SetSlots(ctx context.Context, slots []ProxySlotOptions) erro
 	return nil
 }
 
+func (mgr *Manager) SetSlots(ctx context.Context, slots []ProxySlotOptions) error {
+	mgr.mtx.Lock()
+	defer mgr.mtx.Unlock()
+	return mgr.setSlotsLocked(ctx, slots)
+}
+
 func (mgr *Manager) Shutdown(ctx context.Context) error {
 
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 
-	if !mgr.done.CompareAndSwap(false, true) {
-		return nil
+	if mgr.execInit.CompareAndSwap(true, false) {
+		close(mgr.execDone)
 	}
-
-	close(mgr.doneChan)
 
 	var errList []error
 
@@ -202,18 +224,23 @@ func (mgr *Manager) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	if err := mgr.auth.Shutdown(ctx); err != nil {
-		errList = append(errList, err)
+	if auth := mgr.auth; auth != nil {
+		_ = auth.Shutdown(ctx)
 	}
 
-	if err := mgr.dac.Shutdown(ctx); err != nil {
-		errList = append(errList, err)
+	if dac := mgr.dac; dac != nil {
+		_ = dac.Shutdown(ctx)
 	}
 
 	return utils.JoinInlineErrors(errList...)
 }
 
 func newService(slot ProxySlotOptions, auth *peerAuthenticator) (proxyd.ProxyService, error) {
+
+	if auth == nil {
+		return nil, errors.New("nil peer authenticator")
+	}
+
 	switch slot.Service {
 	case http_pkg.ServiceType:
 		return http_pkg.NewService(slot.BindAddr, auth, slot.HttpServiceOptions)
