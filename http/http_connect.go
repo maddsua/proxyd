@@ -11,6 +11,8 @@ import (
 	"github.com/maddsua/proxyd/utils"
 )
 
+const DefaultTunnelInitTimeout = 15 * time.Second
+
 func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.ProxySession, dstAddr string) {
 
 	wrt.Header().Set("X-Forwarded-Host", dstAddr)
@@ -75,6 +77,14 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 
 	defer conn.Close()
 
+	if err := conn.SetDeadline(time.Now().Add(DefaultTunnelInitTimeout)); err != nil {
+		slog.Debug("HTTP: ServeConnect: Set connection deadline",
+			slog.String("peer_addr", req.RemoteAddr),
+			slog.String("peer_id", sess.PeerID),
+			slog.String("err", err.Error()))
+		return
+	}
+
 	if rw.Reader.Buffered() > 0 {
 
 		slog.Debug("HTTP: ServeConnect: Client sent data before tunnel initiated",
@@ -92,9 +102,9 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 	rw.Writer.Reset(nil)
 	req.Body = nil
 
+	//	respond with ACK
 	if err := tunnelResponse(conn, wrt.Header(), http.StatusOK); err != nil {
 		slog.Debug("HTTP: ServeConnect: Write ACK",
-			slog.String("proxy_host", req.Host),
 			slog.String("peer_addr", req.RemoteAddr),
 			slog.String("peer_id", sess.PeerID),
 			slog.String("err", err.Error()))

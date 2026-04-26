@@ -15,6 +15,8 @@ import (
 
 const ServiceType = "socks"
 
+const DefaultConnInitTimeout = 90 * time.Second
+
 func NewService(addr string, auth proxyd.ProxyAuthenticator) (proxyd.ProxyService, error) {
 
 	listener, err := net.Listen("tcp", addr)
@@ -79,7 +81,7 @@ func (svc *socksService) serveConn(conn net.Conn) {
 	defer svc.wg.Done()
 	defer conn.Close()
 
-	if err := conn.SetDeadline(time.Now().Add(15 * time.Second)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(DefaultConnInitTimeout)); err != nil {
 		slog.Debug("SOCKS: ServeTCP: SetDeadline",
 			slog.String("remote_addr", conn.RemoteAddr().String()),
 			slog.String("err", err.Error()))

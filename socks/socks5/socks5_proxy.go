@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net"
-	"time"
 
 	"github.com/maddsua/proxyd"
 	"github.com/maddsua/proxyd/utils"
@@ -50,14 +49,6 @@ func ServeProxy(ctx context.Context, conn net.Conn, auth proxyd.ProxyAuthenticat
 			slog.String("peer_id", sess.PeerID))
 
 		rw.Reply(ReplyCodeConnectionNotAllowed, nil)
-		return
-	}
-
-	if err := conn.SetDeadline(time.Time{}); err != nil {
-		slog.Debug("SOCKS5: ServeProxy: SetDeadline",
-			slog.String("proxy_host", conn.LocalAddr().String()),
-			slog.String("client_addr", conn.RemoteAddr().String()),
-			slog.String("err", err.Error()))
 		return
 	}
 

@@ -54,7 +54,14 @@ func ReadNullTerminatedString(reader io.Reader, limit int) (string, error) {
 }
 
 // Pipes data between two connections
-func PipeDuplexContext(ctx context.Context, remote, local net.Conn) (err error) {
+func PipeDuplexContext(ctx context.Context, connA, connB net.Conn) (err error) {
+
+	// reset deadlines before proceeding
+	if err := connA.SetDeadline(time.Time{}); err != nil {
+		return err
+	} else if err := connB.SetDeadline(time.Time{}); err != nil {
+		return err
+	}
 
 	doneCh := make(chan error, 2)
 
@@ -63,12 +70,12 @@ func PipeDuplexContext(ctx context.Context, remote, local net.Conn) (err error) 
 
 	go func() {
 		defer wg.Done()
-		doneCh <- pipeConnection(remote, local)
+		doneCh <- pipeConnection(connA, connB)
 	}()
 
 	go func() {
 		defer wg.Done()
-		doneCh <- pipeConnection(local, remote)
+		doneCh <- pipeConnection(connB, connA)
 	}()
 
 	select {
@@ -77,8 +84,8 @@ func PipeDuplexContext(ctx context.Context, remote, local net.Conn) (err error) 
 	case <-ctx.Done():
 		// but if the context gets cancelled before that, set deadlines to 0,
 		// causing copy operations to error out and pipes to exit
-		_ = remote.SetDeadline(time.Unix(1, 0))
-		_ = local.SetDeadline(time.Unix(1, 0))
+		_ = connA.SetDeadline(time.Unix(1, 0))
+		_ = connB.SetDeadline(time.Unix(1, 0))
 	}
 
 	wg.Wait()
