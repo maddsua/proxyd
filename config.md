@@ -63,7 +63,13 @@ radius_server:
   listen_addr: 127.0.0.1:1812 # server's own address. the same address must be passed to the radius manager config of the instance that acts as the proxy orchestrator
   dac_addr: 127.0.0.1:3799 # listen address of the proxy instance's DAC
   secret: testsecret # shared radius secret
-  users: # user list, defined in the same way as for static config
+  users: # user list
     - username: maddsua
       password: testpass
+      radius_session_ttl: <int> # session ttl in seconds
+      radius_session_idle_timeout: <int> # time in seconds, during which a session would be refreshed without any user interaction
+      max_conn: <int> # sets a total limit for concurrent tcp connections
+      bandwidth_kbit: <int> # sets bandwidth limit in kbit/s
+      dns: <ip:port> # dns server to use for this peer
+      outbound_addr: <ip> # local address to use during dials
 ```

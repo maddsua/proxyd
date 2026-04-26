@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"time"
 
 	"github.com/google/uuid"
 	radius_pkg "github.com/maddsua/proxyd/radius"
@@ -56,6 +57,8 @@ type RadiusServerConfiguration struct {
 
 type RadiusUserConfig struct {
 	ProxyHost                string `json:"proxy_host" yaml:"proxy_host"`
+	RadiusSessionTTl         int    `json:"radius_session_ttl" yaml:"radius_session_ttl"`
+	RadiusSessionIdleTimeout int    `json:"radius_session_idle_timeout" yaml:"radius_session_idle_timeout"`
 	static_config.UserConfig `yaml:",inline"`
 }
 
@@ -69,8 +72,10 @@ func (cfg *RadiusUserConfig) ToPeer() *radius_pkg.PeerAuthorization {
 		ChargeableUserID: cfg.Username,
 		FramedIP:         net.ParseIP(cfg.OutboundAddr),
 		DNSServer:        net.ParseIP(cfg.DNS),
+		Timeout:          time.Duration(max(0, cfg.RadiusSessionTTl)),
+		IdleTimeout:      time.Duration(max(0, cfg.RadiusSessionIdleTimeout)),
 		ConnectionLimit:  cfg.MaxConn,
-		MaxRxRate:        int64(cfg.BandwidthKbit) * 1000,
-		MaxTxRate:        int64(cfg.BandwidthKbit) * 1000,
+		MaxRxRate:        max(0, int64(cfg.BandwidthKbit)*1000),
+		MaxTxRate:        max(0, int64(cfg.BandwidthKbit)*1000),
 	}
 }
