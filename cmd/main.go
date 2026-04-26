@@ -25,9 +25,14 @@ func main() {
 		cmd_radius(args, exitCh)
 	case "tokengen":
 		cmd_tokengen(args)
+	case "help":
+		cmd_help()
+	case "version":
+		cmd_version()
 	default:
 		fmt.Fprintln(os.Stderr, "Unexpected command:", cmd)
 		fmt.Fprintln(os.Stderr, "Usage: proxyd <command> <args> <flags>")
+		fmt.Fprintln(os.Stderr, "Use 'help' for show available commands")
 		os.Exit(1)
 	}
 }
