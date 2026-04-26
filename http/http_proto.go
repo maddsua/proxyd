@@ -102,3 +102,7 @@ func ProxyClientIP(req *http.Request) net.IP {
 	}
 	return net.ParseIP(host)
 }
+
+func proxySetErrorMessage(header http.Header, message string) {
+	header.Set("X-Proxy-Error-Message", message)
+}
