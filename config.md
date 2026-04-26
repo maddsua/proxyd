@@ -14,12 +14,12 @@ manager: # proxy server configuration
       type: socks|http # proxy service type
       users: # user list, obviously
         - username: <myuser>
-        password: <super secret password>
-        suspended: true|false # allows to disable a user without completely removing their credentials
-        max_conn: <int> # sets a total limit for concurrent tcp connections
-        bandwidth_kbit: <int> # sets bandwidth limit in kbit/s
-        dns: <ip:port> # dns server to use for this peer
-        outbound_addr: <ip> # local address to use during dials
+          password: <super secret password>
+          suspended: true|false # allows to disable a user without completely removing their credentials
+          max_conn: <int> # sets a total limit for concurrent tcp connections
+          bandwidth_kbit: <int> # sets bandwidth limit in kbit/s
+          dns: <ip:port> # dns server to use for this peer
+          outbound_addr: <ip> # local address to use during dials
   # ----
 
   # ---- RPC ONLY ----
