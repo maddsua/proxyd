@@ -24,8 +24,8 @@ type peerEntry struct {
 }
 
 func (entry *peerEntry) reset() {
-	entry.miss = nil
 	entry.sess = nil
+	entry.miss = nil
 }
 
 type peerCredentialsMiss struct {
@@ -37,9 +37,9 @@ type peerAuthenticator struct {
 	Client radius_pkg.Client
 
 	mtx           sync.Mutex
-	wg            sync.WaitGroup
 	index         map[string]*peerEntry
 	refreshInit   atomic.Bool
+	refreshWg     sync.WaitGroup
 	refreshCtx    context.Context
 	cancelRefresh context.CancelFunc
 
@@ -194,7 +194,7 @@ func (auth *peerAuthenticator) refreshIndex(ctx context.Context) {
 		auth.lockAndRefreshIndexEntry(ctx, key, entry)
 	}
 
-	auth.wg.Wait()
+	auth.refreshWg.Wait()
 }
 
 func (auth *peerAuthenticator) lockAndRefreshIndexEntry(ctx context.Context, key string, entry *peerEntry) {
@@ -202,63 +202,63 @@ func (auth *peerAuthenticator) lockAndRefreshIndexEntry(ctx context.Context, key
 	entry.mtx.Lock()
 
 	if entry.sess != nil {
-		auth.refreshLockedIndexedSession(ctx, entry)
+		auth.refreshSessionStateLocking(ctx, entry)
 		return
 	}
 
 	defer entry.mtx.Unlock()
 
-	if miss := entry.miss; miss != nil && miss.expires.Before(time.Now()) {
-
-		slog.Debug("RADIUS: Login timeout expired",
-			slog.String("host_addr", miss.ProxyHost.String()),
-			slog.String("client_ip", miss.UserAddr.String()),
-			slog.String("username", miss.Username),
-			slog.String("client_ip", miss.UserAddr.String()))
-
-		delete(auth.index, key)
-		entry.reset()
-
+	if entry.miss != nil {
+		auth.expireCredentialsMissLocked(key, entry)
 		return
 	}
 }
 
-func (auth *peerAuthenticator) refreshLockedIndexedSession(ctx context.Context, entry *peerEntry) {
+func (auth *peerAuthenticator) refreshSessionStateLocking(ctx context.Context, entry *peerEntry) {
 
 	state := entry.sess
+	state.mtx.Lock()
+
 	now := time.Now()
+	expired := state.expires.Before(now)
+	refreshable := now.Sub(state.lastUserActivity) < state.idleTimeout
 
-	if state.expires.After(now) {
-		defer entry.mtx.Unlock()
-		state.sess.Pool.Rebalance()
-		state.Account(ctx)
-		return
-	}
-
-	if state.lastUserActivity.Add(state.idleTTL).After(now) {
-		auth.wg.Add(1)
-		go auth.reauthLockedIndexedSession(ctx, entry)
+	if expired && refreshable {
+		auth.refreshWg.Add(1)
+		go auth.reauthSessionStateLocking(ctx, entry)
 		return
 	}
 
 	defer entry.mtx.Unlock()
-	auth.expireIndexedSession(ctx, entry)
+	defer state.mtx.Unlock()
+
+	if expired {
+		auth.expireSessionLocked(ctx, entry)
+		return
+	}
+
+	state.sess.Pool.Rebalance()
+	state.Account(ctx)
 }
 
-func (auth *peerAuthenticator) reauthLockedIndexedSession(ctx context.Context, entry *peerEntry) {
+func (auth *peerAuthenticator) reauthSessionStateLocking(ctx context.Context, entry *peerEntry) {
 
 	defer entry.mtx.Unlock()
-	defer auth.wg.Done()
+	defer auth.refreshWg.Done()
 
 	state := entry.sess
+	defer state.mtx.Unlock()
 
-	if err := state.Reauthenticate(ctx); err != nil {
+	if err := state.reauthenticateLocked(ctx); err != nil {
+
 		slog.Debug("RADIUS: Session re-auth failed",
 			slog.String("slot_id", state.slotID),
 			slog.String("peer_id", state.sess.PeerID),
 			slog.String("acct_sess", state.acctSid),
 			slog.String("err", err.Error()))
-		auth.expireIndexedSession(ctx, entry)
+
+		auth.expireSessionLocked(ctx, entry)
+
 		return
 	}
 
@@ -267,10 +267,28 @@ func (auth *peerAuthenticator) reauthLockedIndexedSession(ctx context.Context, e
 		slog.String("peer_id", state.sess.PeerID),
 		slog.String("acct_sess", state.acctSid))
 
-	entry.sess.Account(ctx)
+	state.Account(ctx)
 }
 
-func (auth *peerAuthenticator) expireIndexedSession(ctx context.Context, entry *peerEntry) {
+func (auth *peerAuthenticator) expireCredentialsMissLocked(key string, entry *peerEntry) {
+
+	miss := entry.miss
+
+	if miss.expires.After(time.Now()) {
+		return
+	}
+
+	slog.Debug("RADIUS: Login timeout expired",
+		slog.String("host_addr", miss.ProxyHost.String()),
+		slog.String("client_ip", miss.UserAddr.String()),
+		slog.String("username", miss.Username),
+		slog.String("client_ip", miss.UserAddr.String()))
+
+	delete(auth.index, key)
+	entry.reset()
+}
+
+func (auth *peerAuthenticator) expireSessionLocked(ctx context.Context, entry *peerEntry) {
 
 	state := entry.sess
 

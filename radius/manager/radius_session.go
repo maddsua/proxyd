@@ -31,7 +31,7 @@ type peerSessionState struct {
 
 	slotID           string
 	lastUserActivity time.Time
-	idleTTL          time.Duration
+	idleTimeout      time.Duration
 
 	acctUid       string
 	acctSid       string
@@ -44,9 +44,12 @@ type peerSessionState struct {
 }
 
 func (state *peerSessionState) Refresh(ctx context.Context, peer *radius_pkg.PeerAuthorization) error {
-
 	state.mtx.Lock()
 	defer state.mtx.Unlock()
+	return state.refreshLocked(ctx, peer)
+}
+
+func (state *peerSessionState) refreshLocked(ctx context.Context, peer *radius_pkg.PeerAuthorization) error {
 
 	if state.done.Load() {
 		return fmt.Errorf("invalid state")
@@ -73,7 +76,7 @@ func (state *peerSessionState) Refresh(ctx context.Context, peer *radius_pkg.Pee
 	state.acctUid = peer.ChargeableUserID
 
 	state.expires = time.Now().Add(utils.UnwrapDuration(peer.Timeout, DefaultSessionTTL))
-	state.idleTTL = utils.UnwrapDuration(peer.IdleTimeout, DefaultReauthPeriod)
+	state.idleTimeout = utils.UnwrapDuration(peer.IdleTimeout, DefaultReauthPeriod)
 
 	if state.sess.Pool.ConnectionLimit() != peer.ConnectionLimit {
 
@@ -226,12 +229,12 @@ func (state *peerSessionState) prepareAcctLocked() (radius_pkg.AccountingDelta, 
 	return radius_pkg.AccountingDelta{}, false
 }
 
-func (state *peerSessionState) Reauthenticate(ctx context.Context) error {
+func (state *peerSessionState) reauthenticateLocked(ctx context.Context) error {
 	peer, err := state.upstream.Authorize(ctx, state.params)
 	if err != nil {
 		return err
 	}
-	return state.Refresh(ctx, peer)
+	return state.refreshLocked(ctx, peer)
 }
 
 func (state *peerSessionState) Terminate(ctx context.Context) {
