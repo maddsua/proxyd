@@ -66,15 +66,15 @@ func (mgr *Manager) initExec() error {
 		return errors.New("manager already running")
 	}
 
+	mgr.execDone = make(chan struct{})
+
 	if err := mgr.setSlotsLocked(context.Background(), mgr.Slots); err != nil {
 		return err
 	}
 
 	if err := mgr.initDac(); err != nil {
-		return err
+		return fmt.Errorf("init dac: %v", err)
 	}
-
-	mgr.execDone = make(chan struct{})
 
 	return nil
 }
