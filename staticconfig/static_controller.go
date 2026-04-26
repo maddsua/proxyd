@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 
 	"github.com/maddsua/proxyd/proxytable"
@@ -13,20 +14,19 @@ import (
 type Manager struct {
 	ConfigLocation string
 
-	active atomic.Bool
-	ctx    context.Context
-	cancel context.CancelFunc
+	mtx        sync.Mutex
+	execInit   atomic.Bool
+	execCtx    context.Context
+	cancelExec context.CancelFunc
 
 	orch proxytable.Orchestrator
 }
 
 func (mgr *Manager) Exec() error {
 
-	if !mgr.active.CompareAndSwap(false, true) {
-		return errors.New("manager instance in use")
+	if err := mgr.initExec(); err != nil {
+		return err
 	}
-
-	mgr.ctx, mgr.cancel = context.WithCancel(context.Background())
 
 	if err := mgr.loadConfig(); err != nil {
 		return err
@@ -44,10 +44,24 @@ func (mgr *Manager) Exec() error {
 				continue
 			}
 			slog.Info("Config updated")
-		case <-mgr.ctx.Done():
-			return mgr.ctx.Err()
+		case <-mgr.execCtx.Done():
+			return mgr.execCtx.Err()
 		}
 	}
+}
+
+func (mgr *Manager) initExec() error {
+
+	mgr.mtx.Lock()
+	defer mgr.mtx.Unlock()
+
+	if !mgr.execInit.CompareAndSwap(false, true) {
+		return errors.New("manager instance in use")
+	}
+
+	mgr.execCtx, mgr.cancelExec = context.WithCancel(context.Background())
+
+	return nil
 }
 
 func (mgr *Manager) loadConfig() error {
@@ -57,20 +71,21 @@ func (mgr *Manager) loadConfig() error {
 		return err
 	}
 
-	mgr.orch.RefreshTable(mgr.ctx, ProxyServiceTable(cfg.Manager.Services))
+	mgr.orch.RefreshTable(mgr.execCtx, ProxyServiceTable(cfg.Manager.Services))
 
 	return nil
 }
 
 func (mgr *Manager) Shutdown(ctx context.Context) error {
 
-	if !mgr.active.Load() {
+	mgr.mtx.Lock()
+	defer mgr.mtx.Unlock()
+
+	if !mgr.execInit.CompareAndSwap(true, false) {
 		return nil
 	}
 
-	defer mgr.active.Store(false)
-
-	mgr.cancel()
+	mgr.cancelExec()
 
 	return mgr.orch.Shutdown(ctx)
 }

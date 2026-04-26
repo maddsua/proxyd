@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,29 +19,24 @@ import (
 type Manager struct {
 	Client *client.Client
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	active atomic.Bool
-
-	orch proxytable.Orchestrator
+	mtx        sync.Mutex
+	execInit   atomic.Bool
+	execCtx    context.Context
+	cancelExec context.CancelFunc
 
 	runID   uuid.UUID
 	started time.Time
+
+	orch proxytable.Orchestrator
 }
 
 func (mgr *Manager) Exec() error {
 
-	if !mgr.active.CompareAndSwap(false, true) {
-		return errors.New("manager instance in use")
+	if err := mgr.initExec(); err != nil {
+		return err
 	}
 
-	mgr.ctx, mgr.cancel = context.WithCancel(context.Background())
-	mgr.runID = uuid.New()
-	mgr.started = time.Now()
-
-	defer mgr.cancel()
-
-	if err := mgr.Client.ReportStatus(mgr.ctx, model.InstanceStatus{RunID: mgr.runID}); err != nil {
+	if err := mgr.Client.ReportStatus(mgr.execCtx, model.InstanceStatus{RunID: mgr.runID}); err != nil {
 		return fmt.Errorf("report init: %v", err)
 	}
 
@@ -72,7 +68,7 @@ func (mgr *Manager) Exec() error {
 						slog.String("err", err.Error()))
 				}
 
-			case <-mgr.ctx.Done():
+			case <-mgr.execCtx.Done():
 				return
 			}
 		}
@@ -91,19 +87,35 @@ func (mgr *Manager) Exec() error {
 					slog.Error("RPC manager: PostDeltas",
 						slog.String("err", err.Error()))
 				}
-			case <-mgr.ctx.Done():
+			case <-mgr.execCtx.Done():
 				return
 			}
 		}
 	}()
 
-	<-mgr.ctx.Done()
-	return mgr.ctx.Err()
+	<-mgr.execCtx.Done()
+	return mgr.execCtx.Err()
+}
+
+func (mgr *Manager) initExec() error {
+
+	mgr.mtx.Lock()
+	defer mgr.mtx.Unlock()
+
+	if !mgr.execInit.CompareAndSwap(false, true) {
+		return errors.New("manager instance in use")
+	}
+
+	mgr.execCtx, mgr.cancelExec = context.WithCancel(context.Background())
+	mgr.runID = uuid.New()
+	mgr.started = time.Now()
+
+	return nil
 }
 
 func (mgr *Manager) postStatus() error {
 
-	ctx, cancel := context.WithTimeout(mgr.ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(mgr.execCtx, 15*time.Second)
 	defer cancel()
 
 	return mgr.Client.ReportStatus(ctx, model.InstanceStatus{
@@ -117,7 +129,7 @@ func (mgr *Manager) postDeltas() error {
 
 	entries := mgr.orch.CollectDeltas()
 
-	ctx, cancel := context.WithTimeout(mgr.ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(mgr.execCtx, 15*time.Second)
 	defer cancel()
 
 	if err := mgr.Client.ReportTraffic(ctx, model.InstanceTrafficUpdate{Deltas: entries}); err != nil {
@@ -130,7 +142,7 @@ func (mgr *Manager) postDeltas() error {
 
 func (mgr *Manager) refreshTable() error {
 
-	ctx, cancel := context.WithTimeout(mgr.ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(mgr.execCtx, 15*time.Second)
 	defer cancel()
 
 	table, err := mgr.Client.GetProxyTable(ctx)
@@ -145,13 +157,14 @@ func (mgr *Manager) refreshTable() error {
 
 func (mgr *Manager) Shutdown(ctx context.Context) error {
 
-	if !mgr.active.Load() {
+	mgr.mtx.Lock()
+	defer mgr.mtx.Unlock()
+
+	if !mgr.execInit.CompareAndSwap(true, false) {
 		return nil
 	}
 
-	defer mgr.active.Store(false)
-
-	mgr.cancel()
+	mgr.cancelExec()
 
 	var errList []error
 
