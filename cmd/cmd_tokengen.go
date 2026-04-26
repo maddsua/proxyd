@@ -36,10 +36,9 @@ func cmd_tokengen(args *utils.ArgList) {
 	}
 
 	if flagFormat {
-		fmt.Fprintln(os.Stderr, "ID:", token.ID.String())
-		fmt.Fprintln(os.Stderr, "Secret:", token.SecretKey.String())
-		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintln(os.Stderr, "id:", token.ID.String())
+		fmt.Fprintln(os.Stderr, "secret:", token.SecretKey.String())
 	}
 
-	fmt.Println(token.String())
+	fmt.Println("token:", token.String())
 }
