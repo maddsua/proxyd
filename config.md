@@ -30,8 +30,8 @@ manager: # proxy server configuration
 
   # ---- RADIUS ONLY ----
 
-  radius_auth_addr: 127.0.0.1:3800 # primary radius auth server addr
-  radius_acct_addr: 127.0.0.1:3801 # optional accounting address. if left empty, the primary auth addr will be used for accounting as well
+  radius_auth_addr: 127.0.0.1:1812 # primary radius auth server addr
+  radius_acct_addr: 127.0.0.1:1813 # optional accounting address. if left empty, the primary auth addr will be used for accounting as well
   dac_listen_addr: 127.0.0.1:3799 # this instance's DAC listen address
   radius_secret: testsecret # shared radius secret
   services: # list of services to spin-up
@@ -60,7 +60,7 @@ rpc_server: # rpc server configuration
             dns: <ip:port> # dns server to use for this peer
             outbound_addr: <ip> # local address to use during dials
 radius_server:
-  listen_addr: 127.0.0.1:3800 # server's own address. the same address must be passed to the radius manager config of the instance that acts as the proxy orchestrator
+  listen_addr: 127.0.0.1:1812 # server's own address. the same address must be passed to the radius manager config of the instance that acts as the proxy orchestrator
   dac_addr: 127.0.0.1:3799 # listen address of the proxy instance's DAC
   secret: testsecret # shared radius secret
   users: # user list, defined in the same way as for static config
