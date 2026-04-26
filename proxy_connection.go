@@ -112,26 +112,33 @@ func (pool *ProxyConnectionPool) shrink(newSize int) {
 	pool.nactive = nActive
 }
 
-func (pool *ProxyConnectionPool) slot() *ProxyConnCtl {
-
-	slot := &ProxyConnCtl{}
-
-	rx, tx := pool.baselineBandwidth()
-	slot.SetBandwidth(int(rx), int(tx))
-
-	return slot
+func (pool *ProxyConnectionPool) newCtl() *ProxyConnCtl {
+	ctl := &ProxyConnCtl{}
+	ctl.SetBandwidth(pool.baselineBandwidth())
+	return ctl
 }
 
-func (pool *ProxyConnectionPool) append() (*ProxyConnCtl, error) {
+func (pool *ProxyConnectionPool) appendSlot() (*ProxyConnCtl, error) {
 
 	if len(pool.pool) >= MaxConnectionLimit {
 		return nil, &ConnectionLimitError{Message: "pool size too large", Limit: MaxConnectionLimit}
 	}
 
-	slot := pool.slot()
+	slot := pool.newCtl()
 	pool.pool = append(pool.pool, slot)
+	pool.nactive++
 
 	return slot, nil
+}
+
+func (pool *ProxyConnectionPool) insertSlot(idx int) *ProxyConnCtl {
+
+	slot := pool.newCtl()
+
+	pool.pool[idx] = slot
+	pool.nactive++
+
+	return slot
 }
 
 func (pool *ProxyConnectionPool) Add() (*ProxyConnCtl, error) {
@@ -139,36 +146,26 @@ func (pool *ProxyConnectionPool) Add() (*ProxyConnCtl, error) {
 	pool.mtx.Lock()
 	defer pool.mtx.Unlock()
 
-	var createSlot = func(idx int) *ProxyConnCtl {
-
-		slot := pool.slot()
-
-		pool.pool[idx] = slot
-		pool.nactive++
-
-		return slot
-	}
-
 	// try finding a slot to reuse
 	for idx, slot := range pool.pool {
 
 		// try to find an empty slot first
 		if slot == nil {
-			return createSlot(idx), nil
+			return pool.insertSlot(idx), nil
 		}
 
 		// if there's no completely empty slots,
 		// try finding one with a closed controller
 		if slot.done.Load() {
 			pool.accountSlot(slot)
-			return createSlot(idx), nil
+			return pool.insertSlot(idx), nil
 		}
 	}
 
 	// add a new slot if no empty ones are available and if no connection limit is set
 	// OR if the pool is smaller than the connection limit
 	if pool.maxslots == 0 || len(pool.pool) < pool.maxslots {
-		return pool.append()
+		return pool.appendSlot()
 	}
 
 	return nil, &ConnectionLimitError{Message: "no available slots", Limit: len(pool.pool)}
@@ -361,9 +358,9 @@ func (ctl *ProxyConnCtl) WithConnection(conn net.Conn) (net.Conn, error) {
 	}, nil
 }
 
-func (pool *ProxyConnCtl) SetBandwidth(rxBytes, txBytes int) {
-	pool.BandwidthRx.Store(int64(rxBytes))
-	pool.BandwidthTx.Store(int64(txBytes))
+func (pool *ProxyConnCtl) SetBandwidth(rxBytes, txBytes int64) {
+	pool.BandwidthRx.Store(rxBytes)
+	pool.BandwidthTx.Store(txBytes)
 }
 
 func (ctl *ProxyConnCtl) Close() (err error) {
