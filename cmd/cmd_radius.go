@@ -107,7 +107,7 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 	}
 
 	if srv.Addr == "" {
-		srv.Addr = ":3799"
+		srv.Addr = ":1812"
 	}
 
 	errCh := make(chan error)
