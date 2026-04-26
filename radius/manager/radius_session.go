@@ -56,17 +56,24 @@ func (state *peerSessionState) Refresh(ctx context.Context, peer *radius_pkg.Pee
 		return fmt.Errorf("accounting session id doesn't match: %s/%s", state.acctSid, peer.AcctSessionID)
 	}
 
+	// Set session activation options.
+	// These can be racy under certain conditions, but they do not change program's behavior
+	if wantPeerID := utils.UnwrapString(
+		peer.ChargeableUserID,
+		state.params.Username,
+		"sess:"+peer.AcctSessionID,
+	); state.sess.PeerID != wantPeerID {
+		state.sess.PeerID = wantPeerID
+		state.sess.PeerEnabled = true
+	}
+
 	isInit := state.init.CompareAndSwap(false, true)
 
 	state.acctSid = peer.AcctSessionID
 	state.acctUid = peer.ChargeableUserID
 
-	state.expires = time.Now().Add(unwrapTTL(peer.Timeout, DefaultSessionTTL))
-	state.idleTTL = unwrapTTL(peer.IdleTimeout, DefaultReauthPeriod)
-
-	// enable peer and update its id as it is only an informational field
-	state.sess.PeerID = unwrapSessionPeerID(peer.ChargeableUserID, state.params.Username, peer.AcctSessionID)
-	state.sess.PeerEnabled = true
+	state.expires = time.Now().Add(utils.UnwrapDuration(peer.Timeout, DefaultSessionTTL))
+	state.idleTTL = utils.UnwrapDuration(peer.IdleTimeout, DefaultReauthPeriod)
 
 	if state.sess.Pool.ConnectionLimit() != peer.ConnectionLimit {
 
@@ -239,15 +246,6 @@ func (state *peerSessionState) Terminate(ctx context.Context) {
 	state.acctWg.Wait()
 }
 
-func unwrapTTL(values ...time.Duration) time.Duration {
-	for _, val := range values {
-		if val > time.Second {
-			return val
-		}
-	}
-	panic("no non-zero ttl options")
-}
-
 func unwrapFramedIP(ip net.IP) (*proxyd.PeerAddr, error) {
 
 	if ip == nil {
@@ -267,18 +265,5 @@ func unwrapDnsServerAddr(addr net.IP) string {
 	if addr != nil {
 		return addr.String()
 	}
-	return ""
-}
-
-func unwrapSessionPeerID(peerID, username, sessionID string) string {
-
-	if peerID != "" {
-		return peerID
-	} else if username != "" {
-		return username
-	} else if sessionID != "" {
-		return "sess:" + sessionID
-	}
-
 	return ""
 }
