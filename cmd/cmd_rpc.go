@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/maddsua/proxyd/rpc"
-	"github.com/maddsua/proxyd/rpc/handler"
+	rpc_handler "github.com/maddsua/proxyd/rpc/handler"
 	rpc_model "github.com/maddsua/proxyd/rpc/model"
 	static "github.com/maddsua/proxyd/staticconfig"
 	"github.com/maddsua/proxyd/utils"
@@ -93,7 +93,7 @@ func cmd_rpc(args *utils.ArgList, exitCh <-chan os.Signal) {
 	}()
 
 	mux := http.NewServeMux()
-	handler.HandleWithMux(mux, &rpcHandler)
+	rpc_handler.HandleWithMux(mux, &rpcHandler)
 
 	srv := http.Server{
 		Addr:    cfg.RPC.ListenAddr,
@@ -195,7 +195,7 @@ func (handler *rpcMethodHandler) authorizeInstance(token *rpc.InstanceToken) (*R
 		if client.ID == token.ID {
 
 			if !client.Secret.Equal(&token.SecretKey) {
-				return nil, &rpc.Error{
+				return nil, &rpc_handler.ProcedureError{
 					RPCError: rpc_model.RPCError{
 						Message: "Invalid secret key",
 					},
@@ -207,7 +207,7 @@ func (handler *rpcMethodHandler) authorizeInstance(token *rpc.InstanceToken) (*R
 		}
 	}
 
-	return nil, &rpc.Error{
+	return nil, &rpc_handler.ProcedureError{
 		RPCError: rpc_model.RPCError{
 			Message: "Instance token doesn't match any of the defined instances",
 		},
