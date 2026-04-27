@@ -18,9 +18,10 @@ import (
 )
 
 type peerEntry struct {
-	sess *peerSessionState
-	miss *peerCredentialsMiss
-	mtx  sync.Mutex
+	sess   *peerSessionState
+	miss   *peerCredentialsMiss
+	mtx    sync.Mutex
+	pinned atomic.Bool
 }
 
 func (entry *peerEntry) reset() {
@@ -39,7 +40,6 @@ type peerAuthenticator struct {
 	mtx           sync.Mutex
 	index         map[string]*peerEntry
 	refreshInit   atomic.Bool
-	refreshWg     sync.WaitGroup
 	refreshCtx    context.Context
 	cancelRefresh context.CancelFunc
 
@@ -190,61 +190,66 @@ func (auth *peerAuthenticator) refreshIndex(ctx context.Context) {
 	auth.mtx.Lock()
 	defer auth.mtx.Unlock()
 
-	for key, entry := range auth.index {
-		auth.lockAndRefreshIndexEntry(ctx, key, entry)
-	}
+	now := time.Now()
 
-	auth.refreshWg.Wait()
+	for key, entry := range auth.index {
+		auth.lockAndRefreshIndexEntry(ctx, now, key, entry)
+	}
 }
 
-func (auth *peerAuthenticator) lockAndRefreshIndexEntry(ctx context.Context, key string, entry *peerEntry) {
+func (auth *peerAuthenticator) lockAndRefreshIndexEntry(ctx context.Context, now time.Time, key string, entry *peerEntry) {
 
 	entry.mtx.Lock()
 
-	if entry.sess != nil {
-		auth.refreshSessionState(ctx, entry)
+	if state := entry.sess; state != nil {
+
+		state.mtx.Lock()
+
+		expired := state.expires.Before(now)
+		refreshable := now.Sub(state.lastUserActivity) < state.idleTimeout
+
+		if expired && refreshable {
+			if entry.pinned.CompareAndSwap(false, true) {
+				go auth.reauthSessionState(ctx, entry)
+			}
+			return
+		}
+
+		defer entry.mtx.Unlock()
+		defer state.mtx.Unlock()
+
+		if expired {
+			auth.expireSessionState(ctx, entry)
+			return
+		}
+
+		state.sess.Pool.Rebalance()
+		state.account(ctx, false)
+
 		return
 	}
 
 	defer entry.mtx.Unlock()
 
-	if entry.miss != nil {
-		auth.expireCredentialsMiss(key, entry)
+	if miss := entry.miss; miss != nil && miss.expires.Before(now) {
+
+		slog.Debug("RADIUS: Login timeout expired",
+			slog.String("host_addr", miss.ProxyHost.String()),
+			slog.String("client_ip", miss.UserAddr.String()),
+			slog.String("username", miss.Username),
+			slog.String("client_ip", miss.UserAddr.String()))
+
+		delete(auth.index, key)
+		entry.reset()
+
 		return
 	}
-}
-
-func (auth *peerAuthenticator) refreshSessionState(ctx context.Context, entry *peerEntry) {
-
-	state := entry.sess
-	state.mtx.Lock()
-
-	now := time.Now()
-	expired := state.expires.Before(now)
-	refreshable := now.Sub(state.lastUserActivity) < state.idleTimeout
-
-	if expired && refreshable {
-		auth.refreshWg.Add(1)
-		go auth.reauthSessionState(ctx, entry)
-		return
-	}
-
-	defer entry.mtx.Unlock()
-	defer state.mtx.Unlock()
-
-	if expired {
-		auth.expireSessionState(ctx, entry)
-		return
-	}
-
-	state.sess.Pool.Rebalance()
-	state.account(ctx, false)
 }
 
 func (auth *peerAuthenticator) reauthSessionState(ctx context.Context, entry *peerEntry) {
 
 	defer entry.mtx.Unlock()
-	defer auth.refreshWg.Done()
+	defer entry.pinned.Store(false)
 
 	state := entry.sess
 	defer state.mtx.Unlock()
@@ -268,24 +273,6 @@ func (auth *peerAuthenticator) reauthSessionState(ctx context.Context, entry *pe
 		slog.String("acct_sess", state.acctSid))
 
 	state.account(ctx, false)
-}
-
-func (auth *peerAuthenticator) expireCredentialsMiss(key string, entry *peerEntry) {
-
-	miss := entry.miss
-
-	if miss.expires.After(time.Now()) {
-		return
-	}
-
-	slog.Debug("RADIUS: Login timeout expired",
-		slog.String("host_addr", miss.ProxyHost.String()),
-		slog.String("client_ip", miss.UserAddr.String()),
-		slog.String("username", miss.Username),
-		slog.String("client_ip", miss.UserAddr.String()))
-
-	delete(auth.index, key)
-	entry.reset()
 }
 
 func (auth *peerAuthenticator) expireSessionState(ctx context.Context, entry *peerEntry) {
