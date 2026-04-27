@@ -10,10 +10,10 @@ type ConfigurationWrapper struct {
 }
 
 type StaticManagerConfig struct {
-	Services []ServiceUtilityConfig `json:"services" yaml:"services"`
+	Services []ProxyServiceConfig `json:"services" yaml:"services"`
 }
 
-type ServiceUtilityConfig struct {
+type ProxyServiceConfig struct {
 	BindAddr string       `json:"bind_addr" yaml:"bind_addr"`
 	Type     string       `json:"type" yaml:"type"`
 	Users    []UserConfig `json:"users" yaml:"users"`
@@ -31,7 +31,7 @@ type UserConfig struct {
 	OutboundAddr  string `json:"outbound_addr" yaml:"outbound_addr"`
 }
 
-func ProxyServiceTable(entries []ServiceUtilityConfig) []proxytable.ProxyServiceEntry {
+func ProxyServiceTable(entries []ProxyServiceConfig) []proxytable.ProxyServiceEntry {
 
 	services := make([]proxytable.ProxyServiceEntry, len(entries))
 
