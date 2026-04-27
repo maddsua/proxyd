@@ -192,12 +192,12 @@ func (auth *peerAuthenticator) refreshIndex(ctx context.Context) {
 
 	now := time.Now()
 
-	for key, entry := range auth.index {
-		auth.lockAndRefreshIndexEntry(ctx, now, key, entry)
+	for _, entry := range auth.index {
+		auth.lockAndRefreshIndexEntry(ctx, now, entry)
 	}
 }
 
-func (auth *peerAuthenticator) lockAndRefreshIndexEntry(ctx context.Context, now time.Time, key string, entry *peerEntry) {
+func (auth *peerAuthenticator) lockAndRefreshIndexEntry(ctx context.Context, now time.Time, entry *peerEntry) {
 
 	entry.mtx.Lock()
 
@@ -232,16 +232,7 @@ func (auth *peerAuthenticator) lockAndRefreshIndexEntry(ctx context.Context, now
 	defer entry.mtx.Unlock()
 
 	if miss := entry.miss; miss != nil && miss.expires.Before(now) {
-
-		slog.Debug("RADIUS: Login timeout expired",
-			slog.String("host_addr", miss.ProxyHost.String()),
-			slog.String("client_ip", miss.UserAddr.String()),
-			slog.String("username", miss.Username),
-			slog.String("client_ip", miss.UserAddr.String()))
-
-		delete(auth.index, key)
-		entry.reset()
-
+		auth.expireCredentialsMiss(entry)
 		return
 	}
 }
@@ -288,6 +279,20 @@ func (auth *peerAuthenticator) expireSessionState(ctx context.Context, entry *pe
 
 	entry.reset()
 	state.Terminate(ctx)
+}
+
+func (auth *peerAuthenticator) expireCredentialsMiss(entry *peerEntry) {
+
+	miss := entry.miss
+
+	slog.Debug("RADIUS: Login timeout expired",
+		slog.String("host_addr", miss.ProxyHost.String()),
+		slog.String("client_ip", miss.UserAddr.String()),
+		slog.String("username", miss.Username),
+		slog.String("client_ip", miss.UserAddr.String()))
+
+	delete(auth.index, miss.Hash())
+	entry.reset()
 }
 
 func (auth *peerAuthenticator) DisconnectSession(ctx context.Context, acctSid string) error {
