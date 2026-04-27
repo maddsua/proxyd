@@ -2,7 +2,6 @@ package proxyd_test
 
 import (
 	"crypto/rand"
-	"fmt"
 	"io"
 	"math"
 	"net"
@@ -424,7 +423,7 @@ func Test_PoolBandwidth_Read_2(t *testing.T) {
 			defer wg.Done()
 
 			if _, err := io.Copy(io.Discard, conn); err != nil {
-				panic(fmt.Errorf("io.Copy: %v", err))
+				panic("copy: " + err.Error())
 			}
 
 		}()
@@ -520,7 +519,7 @@ func Test_PoolBandwidth_Write_2(t *testing.T) {
 			defer wg.Done()
 
 			if _, err := io.Copy(conn, io.LimitReader(rand.Reader, volumePerConn)); err != nil {
-				panic(fmt.Errorf("io.Copy: %v", err))
+				panic("copy: " + err.Error())
 			}
 
 		}()

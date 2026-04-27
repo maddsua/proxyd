@@ -99,7 +99,7 @@ func NewInstanceToken() (*InstanceToken, error) {
 
 	secret := make([]byte, 64)
 	if _, err := rand.Reader.Read(secret); err != nil {
-		panic(fmt.Errorf("read random: %v", err))
+		panic("read random: " + err.Error())
 	}
 
 	return &InstanceToken{ID: id, SecretKey: RawSecretKey{Bytes: secret}}, nil
