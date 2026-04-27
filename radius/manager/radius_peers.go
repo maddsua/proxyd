@@ -243,6 +243,10 @@ func (auth *peerAuthenticator) reauthSessionState(ctx context.Context, entry *pe
 	defer entry.pinned.Store(false)
 
 	state := entry.sess
+	if state == nil {
+		panic("misuse of index method: session state is nil")
+	}
+
 	defer state.mtx.Unlock()
 
 	if err := state.reauthenticate(ctx); err != nil {
@@ -269,6 +273,9 @@ func (auth *peerAuthenticator) reauthSessionState(ctx context.Context, entry *pe
 func (auth *peerAuthenticator) expireSessionState(ctx context.Context, entry *peerEntry) {
 
 	state := entry.sess
+	if state == nil {
+		panic("misuse of index method: session state is nil")
+	}
 
 	slog.Debug("RADIUS: Session expired",
 		slog.String("slot_id", state.slotID),
@@ -284,6 +291,9 @@ func (auth *peerAuthenticator) expireSessionState(ctx context.Context, entry *pe
 func (auth *peerAuthenticator) expireCredentialsMiss(entry *peerEntry) {
 
 	miss := entry.miss
+	if miss == nil {
+		panic("misuse of index method: credentials miss is nil")
+	}
 
 	slog.Debug("RADIUS: Login timeout expired",
 		slog.String("host_addr", miss.ProxyHost.String()),
