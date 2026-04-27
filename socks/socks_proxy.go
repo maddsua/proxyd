@@ -31,6 +31,7 @@ func NewService(addr string, auth proxyd.ProxyAuthenticator) (proxyd.ProxyServic
 
 	svc.ctx, svc.cancel = context.WithCancel(context.Background())
 
+	svc.srvMtx.Lock()
 	go svc.serve()
 
 	return svc, nil
@@ -40,8 +41,10 @@ type socksService struct {
 	Auth proxyd.ProxyAuthenticator
 
 	listener net.Listener
+	srvMtx   sync.Mutex
 	wg       sync.WaitGroup
 	err      error
+	mtx      sync.Mutex
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
@@ -60,6 +63,8 @@ func (svc *socksService) Options() proxyd.ProxyServiceOptions {
 
 func (svc *socksService) serve() {
 
+	defer svc.srvMtx.Unlock()
+
 	for svc.ctx.Err() == nil {
 
 		conn, err := svc.listener.Accept()
@@ -70,13 +75,12 @@ func (svc *socksService) serve() {
 			break
 		}
 
+		svc.wg.Add(1)
 		go svc.serveConn(conn)
 	}
 }
 
 func (svc *socksService) serveConn(conn net.Conn) {
-
-	svc.wg.Add(1)
 
 	defer svc.wg.Done()
 	defer conn.Close()
@@ -109,22 +113,23 @@ func (svc *socksService) serveConn(conn net.Conn) {
 
 func (svc *socksService) Shutdown(ctx context.Context) error {
 
-	// cancel the context first so that the listener routine won't overwrite the error value
+	svc.mtx.Lock()
+	defer svc.mtx.Unlock()
+
+	// cancel base context and close the listener
 	svc.cancel()
 
-	// then close the listener itself
-	svc.err = svc.listener.Close()
+	if err := svc.listener.Close(); err != nil {
+		svc.err = err
+	}
 
-	// wait until all subroutines exit or untile the shutdown context itself gets cancelled
-	doneCh := make(chan struct{}, 1)
+	// wait until listener exits
+	svc.srvMtx.Lock()
+	defer svc.srvMtx.Unlock()
 
-	go func() {
-		svc.wg.Wait()
-		doneCh <- struct{}{}
-	}()
-
+	// wait until all spawned routines exit as well
 	select {
-	case <-doneCh:
+	case <-utils.GroupDoneChan(&svc.wg):
 	case <-ctx.Done():
 		return ctx.Err()
 	}

@@ -68,7 +68,7 @@ func (mgr *Manager) initExec() error {
 
 	mgr.execDone = make(chan struct{})
 
-	if err := mgr.setSlotsLocked(context.Background(), mgr.Slots); err != nil {
+	if err := mgr.setSlots(context.Background(), mgr.Slots); err != nil {
 		return err
 	}
 
@@ -116,7 +116,13 @@ func (mgr *Manager) initDac() error {
 	return nil
 }
 
-func (mgr *Manager) setSlotsLocked(ctx context.Context, slots []ProxySlotOptions) error {
+func (mgr *Manager) SetSlots(ctx context.Context, slots []ProxySlotOptions) error {
+	mgr.mtx.Lock()
+	defer mgr.mtx.Unlock()
+	return mgr.setSlots(ctx, slots)
+}
+
+func (mgr *Manager) setSlots(ctx context.Context, slots []ProxySlotOptions) error {
 
 	if mgr.auth == nil {
 
@@ -199,12 +205,6 @@ func (mgr *Manager) setSlotsLocked(ctx context.Context, slots []ProxySlotOptions
 	mgr.Slots = slots
 
 	return nil
-}
-
-func (mgr *Manager) SetSlots(ctx context.Context, slots []ProxySlotOptions) error {
-	mgr.mtx.Lock()
-	defer mgr.mtx.Unlock()
-	return mgr.setSlotsLocked(ctx, slots)
 }
 
 func (mgr *Manager) Shutdown(ctx context.Context) error {

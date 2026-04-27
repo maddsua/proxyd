@@ -36,7 +36,6 @@ type peerSessionState struct {
 	acctUid       string
 	acctSid       string
 	acctMtx       sync.Mutex
-	acctWg        sync.WaitGroup
 	lastAccounted time.Time
 
 	dnsTester *proxyd.DNSTester
@@ -46,10 +45,10 @@ type peerSessionState struct {
 func (state *peerSessionState) Refresh(ctx context.Context, peer *radius_pkg.PeerAuthorization) error {
 	state.mtx.Lock()
 	defer state.mtx.Unlock()
-	return state.refreshLocked(ctx, peer)
+	return state.refresh(ctx, peer)
 }
 
-func (state *peerSessionState) refreshLocked(ctx context.Context, peer *radius_pkg.PeerAuthorization) error {
+func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.PeerAuthorization) error {
 
 	if state.done.Load() {
 		return fmt.Errorf("invalid state")
@@ -61,7 +60,7 @@ func (state *peerSessionState) refreshLocked(ctx context.Context, peer *radius_p
 
 	// Set session activation options.
 	// These can be racy under certain conditions, but they do not change program's behavior
-	if wantPeerID := utils.UnwrapString(
+	if wantPeerID := utils.NonZeroString(
 		peer.ChargeableUserID,
 		state.params.Username,
 		"sess:"+peer.AcctSessionID,
@@ -75,8 +74,8 @@ func (state *peerSessionState) refreshLocked(ctx context.Context, peer *radius_p
 	state.acctSid = peer.AcctSessionID
 	state.acctUid = peer.ChargeableUserID
 
-	state.expires = time.Now().Add(utils.UnwrapDuration(peer.Timeout, DefaultSessionTTL))
-	state.idleTimeout = utils.UnwrapDuration(peer.IdleTimeout, DefaultReauthPeriod)
+	state.expires = time.Now().Add(utils.NonZeroDuration(peer.Timeout, DefaultSessionTTL))
+	state.idleTimeout = utils.NonZeroDuration(peer.IdleTimeout, DefaultReauthPeriod)
 
 	if state.sess.Pool.ConnectionLimit() != peer.ConnectionLimit {
 
@@ -157,47 +156,34 @@ func (state *peerSessionState) refreshLocked(ctx context.Context, peer *radius_p
 		state.sess.Reset()
 	}
 
-	state.Account(ctx)
+	state.account(ctx, false)
 
 	return nil
 }
 
-func (state *peerSessionState) Account(ctx context.Context) {
+func (state *peerSessionState) account(ctx context.Context, syncFlag bool) {
 
 	state.acctMtx.Lock()
 
-	params, valid := state.prepareAcctLocked()
+	params, valid := state.prepareAcct()
 	if !valid {
 		state.acctMtx.Unlock()
 		return
 	}
 
-	state.acctWg.Add(1)
+	if syncFlag {
+		defer state.acctMtx.Unlock()
+		state.sendAcct(ctx, params)
+		return
+	}
 
 	go func() {
-
 		defer state.acctMtx.Unlock()
-		defer state.acctWg.Done()
-
-		if err := state.upstream.AccountTraffic(ctx, params); err != nil {
-
-			slog.Error("RADIUS: Account traffic",
-				slog.String("peer_id", state.sess.PeerID),
-				slog.String("acct_id", state.acctSid),
-				slog.String("acct_type", params.Type.String()),
-				slog.String("err", err.Error()))
-
-			return
-		}
-
-		state.sess.Pool.TrafficRx.Add(-params.RxBytes)
-		state.sess.Pool.TrafficTx.Add(-params.TxBytes)
-
-		state.lastAccounted = time.Now()
+		state.sendAcct(ctx, params)
 	}()
 }
 
-func (state *peerSessionState) prepareAcctLocked() (radius_pkg.AccountingDelta, bool) {
+func (state *peerSessionState) prepareAcct() (radius_pkg.AccountingDelta, bool) {
 
 	params := radius_pkg.AccountingDelta{
 		ChargeableUserID: state.acctUid,
@@ -229,12 +215,31 @@ func (state *peerSessionState) prepareAcctLocked() (radius_pkg.AccountingDelta, 
 	return radius_pkg.AccountingDelta{}, false
 }
 
-func (state *peerSessionState) reauthenticateLocked(ctx context.Context) error {
+func (state *peerSessionState) sendAcct(ctx context.Context, params radius_pkg.AccountingDelta) {
+
+	if err := state.upstream.AccountTraffic(ctx, params); err != nil {
+
+		slog.Error("RADIUS: Account traffic",
+			slog.String("peer_id", state.sess.PeerID),
+			slog.String("acct_id", state.acctSid),
+			slog.String("acct_type", params.Type.String()),
+			slog.String("err", err.Error()))
+
+		return
+	}
+
+	state.sess.Pool.TrafficRx.Add(-params.RxBytes)
+	state.sess.Pool.TrafficTx.Add(-params.TxBytes)
+
+	state.lastAccounted = time.Now()
+}
+
+func (state *peerSessionState) reauthenticate(ctx context.Context) error {
 	peer, err := state.upstream.Authorize(ctx, state.params)
 	if err != nil {
 		return err
 	}
-	return state.refreshLocked(ctx, peer)
+	return state.refresh(ctx, peer)
 }
 
 func (state *peerSessionState) Terminate(ctx context.Context) {
@@ -244,9 +249,7 @@ func (state *peerSessionState) Terminate(ctx context.Context) {
 	}
 
 	state.sess.Reset()
-
-	state.Account(ctx)
-	state.acctWg.Wait()
+	state.account(ctx, true)
 }
 
 func unwrapFramedIP(ip net.IP) (*proxyd.PeerAddr, error) {

@@ -16,7 +16,7 @@ type serviceSlot struct {
 	err  error
 }
 
-func (slot *serviceSlot) Satisfies(opts ProxyServiceOptions) bool {
+func (slot *serviceSlot) satisfies(opts ProxyServiceOptions) bool {
 
 	if slot == nil || slot.svc == nil || slot.err != nil {
 		return false
@@ -32,7 +32,7 @@ func (slot *serviceSlot) Satisfies(opts ProxyServiceOptions) bool {
 	return true
 }
 
-func (slot *serviceSlot) Shutdown(ctx context.Context) error {
+func (slot *serviceSlot) shutdown(ctx context.Context) error {
 
 	// forcing a slot to shut down anyway after a 3 second wait period;
 	// tbh this shouldn't be necessary
@@ -66,7 +66,7 @@ func serviceStartErrorMessage(err error) string {
 	return err.Error()
 }
 
-func NewSlotService(opts ProxyServiceOptions, auth *peerAuthenticator) (proxyd.ProxyService, error) {
+func newSlotService(opts ProxyServiceOptions, auth *peerAuthenticator) (proxyd.ProxyService, error) {
 	svc, err := newService(opts, auth)
 	if svc == nil {
 		return nil, &ServiceStartError{

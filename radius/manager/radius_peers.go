@@ -55,7 +55,7 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, pro
 		ProxyHost: proxyHost,
 	}
 
-	entry := auth.acquireIndexEntry(params.Hash())
+	entry := auth.AcquireIndexEntry(params.Hash())
 	defer entry.mtx.Unlock()
 
 	if entry.sess != nil {
@@ -109,7 +109,7 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, pro
 	return &state.sess, nil
 }
 
-func (auth *peerAuthenticator) acquireIndexEntry(key string) *peerEntry {
+func (auth *peerAuthenticator) AcquireIndexEntry(key string) *peerEntry {
 
 	auth.mtx.Lock()
 	defer auth.mtx.Unlock()
@@ -119,10 +119,10 @@ func (auth *peerAuthenticator) acquireIndexEntry(key string) *peerEntry {
 		go auth.indexRefreshRoutine()
 	}
 
-	return auth.acquireIndexEntryLocked(key)
+	return auth.acquireIndexEntry(key)
 }
 
-func (auth *peerAuthenticator) acquireIndexEntryLocked(key string) *peerEntry {
+func (auth *peerAuthenticator) acquireIndexEntry(key string) *peerEntry {
 
 	if auth.index == nil {
 		auth.index = map[string]*peerEntry{}
@@ -202,19 +202,19 @@ func (auth *peerAuthenticator) lockAndRefreshIndexEntry(ctx context.Context, key
 	entry.mtx.Lock()
 
 	if entry.sess != nil {
-		auth.refreshSessionStateLocking(ctx, entry)
+		auth.refreshSessionState(ctx, entry)
 		return
 	}
 
 	defer entry.mtx.Unlock()
 
 	if entry.miss != nil {
-		auth.expireCredentialsMissLocked(key, entry)
+		auth.expireCredentialsMiss(key, entry)
 		return
 	}
 }
 
-func (auth *peerAuthenticator) refreshSessionStateLocking(ctx context.Context, entry *peerEntry) {
+func (auth *peerAuthenticator) refreshSessionState(ctx context.Context, entry *peerEntry) {
 
 	state := entry.sess
 	state.mtx.Lock()
@@ -225,7 +225,7 @@ func (auth *peerAuthenticator) refreshSessionStateLocking(ctx context.Context, e
 
 	if expired && refreshable {
 		auth.refreshWg.Add(1)
-		go auth.reauthSessionStateLocking(ctx, entry)
+		go auth.reauthSessionState(ctx, entry)
 		return
 	}
 
@@ -233,15 +233,15 @@ func (auth *peerAuthenticator) refreshSessionStateLocking(ctx context.Context, e
 	defer state.mtx.Unlock()
 
 	if expired {
-		auth.expireSessionLocked(ctx, entry)
+		auth.expireSessionState(ctx, entry)
 		return
 	}
 
 	state.sess.Pool.Rebalance()
-	state.Account(ctx)
+	state.account(ctx, false)
 }
 
-func (auth *peerAuthenticator) reauthSessionStateLocking(ctx context.Context, entry *peerEntry) {
+func (auth *peerAuthenticator) reauthSessionState(ctx context.Context, entry *peerEntry) {
 
 	defer entry.mtx.Unlock()
 	defer auth.refreshWg.Done()
@@ -249,7 +249,7 @@ func (auth *peerAuthenticator) reauthSessionStateLocking(ctx context.Context, en
 	state := entry.sess
 	defer state.mtx.Unlock()
 
-	if err := state.reauthenticateLocked(ctx); err != nil {
+	if err := state.reauthenticate(ctx); err != nil {
 
 		slog.Debug("RADIUS: Session re-auth failed",
 			slog.String("slot_id", state.slotID),
@@ -257,7 +257,7 @@ func (auth *peerAuthenticator) reauthSessionStateLocking(ctx context.Context, en
 			slog.String("acct_sess", state.acctSid),
 			slog.String("err", err.Error()))
 
-		auth.expireSessionLocked(ctx, entry)
+		auth.expireSessionState(ctx, entry)
 
 		return
 	}
@@ -267,10 +267,10 @@ func (auth *peerAuthenticator) reauthSessionStateLocking(ctx context.Context, en
 		slog.String("peer_id", state.sess.PeerID),
 		slog.String("acct_sess", state.acctSid))
 
-	state.Account(ctx)
+	state.account(ctx, false)
 }
 
-func (auth *peerAuthenticator) expireCredentialsMissLocked(key string, entry *peerEntry) {
+func (auth *peerAuthenticator) expireCredentialsMiss(key string, entry *peerEntry) {
 
 	miss := entry.miss
 
@@ -288,7 +288,7 @@ func (auth *peerAuthenticator) expireCredentialsMissLocked(key string, entry *pe
 	entry.reset()
 }
 
-func (auth *peerAuthenticator) expireSessionLocked(ctx context.Context, entry *peerEntry) {
+func (auth *peerAuthenticator) expireSessionState(ctx context.Context, entry *peerEntry) {
 
 	state := entry.sess
 

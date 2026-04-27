@@ -187,7 +187,7 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 		slot := orch.slots[bindKey]
 
 		// repalce slot if it isn't up to date
-		if !slot.Satisfies(entry.ProxyServiceOptions) {
+		if !slot.satisfies(entry.ProxyServiceOptions) {
 
 			if slot == nil {
 
@@ -210,7 +210,7 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 					slog.String("old_service", slot.svc.ProxyService()),
 					slog.String("new_service", entry.Service))
 
-				if slot.err = slot.Shutdown(ctx); slot.err != nil {
+				if slot.err = slot.shutdown(ctx); slot.err != nil {
 					slog.Error("Orchestrator: Slot shutdown",
 						slog.String("bind_addr", slot.svc.BindAddr().String()),
 						slog.String("service", slot.svc.ProxyService()),
@@ -224,7 +224,7 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 					slog.String("new_service", entry.Service))
 			}
 
-			if slot.svc, slot.err = NewSlotService(entry.ProxyServiceOptions, &slot.auth); slot.err != nil {
+			if slot.svc, slot.err = newSlotService(entry.ProxyServiceOptions, &slot.auth); slot.err != nil {
 				slog.Error("Orchestrator: Start service",
 					slog.String("bind_addr", entry.BindAddr),
 					slog.String("service", entry.Service),
@@ -254,7 +254,7 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 			continue
 		}
 
-		if err := slot.Shutdown(ctx); err != nil {
+		if err := slot.shutdown(ctx); err != nil {
 
 			slog.Error("Orchestrator: Slot shutdown",
 				slog.String("bind_addr", slot.svc.BindAddr().String()),
@@ -293,7 +293,7 @@ func (orch *Orchestrator) Shutdown(ctx context.Context) error {
 
 	for key, slot := range orch.slots {
 
-		if err := slot.Shutdown(ctx); err != nil && ctx.Err() == nil {
+		if err := slot.shutdown(ctx); err != nil && ctx.Err() == nil {
 			errList = append(errList, err)
 		} else {
 			delete(orch.slots, key)

@@ -133,3 +133,12 @@ func MomentaryEffectiveByteRate(base int64, moment, after time.Time) int64 {
 	bound := (int64(elapsed) + 1) * base
 	return max(0, min(effective, bound))
 }
+
+func GroupDoneChan(wg *sync.WaitGroup) <-chan struct{} {
+	doneCh := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(doneCh)
+	}()
+	return doneCh
+}

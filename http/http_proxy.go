@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/maddsua/proxyd"
+	"github.com/maddsua/proxyd/utils"
 )
 
 const ServiceType = "http"
@@ -85,21 +86,26 @@ func NewService(addr string, auth proxyd.ProxyAuthenticator, opts HttpServiceOpt
 	svc.ctx, svc.cancel = context.WithCancel(context.Background())
 
 	svc.srv.Handler = &svc.handler
-	svc.srv.BaseContext = func(l net.Listener) context.Context {
-		return svc.ctx
-	}
+	svc.srv.BaseContext = svc.baseCtx
 
+	svc.srvMtx.Lock()
 	go svc.serve(listener)
 
 	return svc, nil
 }
 
 type httpService struct {
-	srv     http.Server
 	handler requestHandler
+	srv     http.Server
+	srvMtx  sync.Mutex
+	mtx     sync.Mutex
 	err     error
 	ctx     context.Context
 	cancel  context.CancelFunc
+}
+
+func (svc *httpService) baseCtx(_ net.Listener) context.Context {
+	return svc.ctx
 }
 
 func (svc *httpService) ProxyService() string {
@@ -128,6 +134,9 @@ func (svc *httpService) Options() proxyd.ProxyServiceOptions {
 }
 
 func (svc *httpService) serve(listener net.Listener) {
+
+	defer svc.srvMtx.Unlock()
+
 	if err := svc.srv.Serve(listener); err != nil && svc.ctx.Err() == nil {
 		svc.err = err
 	}
@@ -135,18 +144,20 @@ func (svc *httpService) serve(listener net.Listener) {
 
 func (svc *httpService) Shutdown(ctx context.Context) error {
 
+	svc.mtx.Lock()
+	defer svc.mtx.Unlock()
+
 	svc.cancel()
-	svc.err = svc.srv.Close()
 
-	doneCh := make(chan struct{}, 1)
+	if err := svc.srv.Shutdown(ctx); err != nil {
+		svc.err = err
+	}
 
-	go func() {
-		svc.handler.wg.Wait()
-		doneCh <- struct{}{}
-	}()
+	svc.srvMtx.Lock()
+	defer svc.srvMtx.Unlock()
 
 	select {
-	case <-doneCh:
+	case <-utils.GroupDoneChan(&svc.handler.wg):
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -181,6 +192,11 @@ func (set *allowMethodSet) List() []string {
 
 func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Request) {
 
+	//	technically this is wrong,
+	// but I don't see a good way of fixing it without rewriting the server from scratch
+	handler.wg.Add(1)
+	defer handler.wg.Done()
+
 	if req.Method == http.MethodOptions {
 
 		wrt.Header().Set("Allow", strings.Join(handler.allowMethodList(), ", "))
@@ -203,9 +219,6 @@ func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Requ
 
 		return
 	}
-
-	handler.wg.Add(1)
-	defer handler.wg.Done()
 
 	userinfo, err := RequestCredentials(req)
 	if err != nil || userinfo == nil {
