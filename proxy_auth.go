@@ -59,17 +59,18 @@ func (sess *ProxySession) DialDestinationContext(ctx context.Context, network, a
 
 	conn, err := sess.Dialer.DialContext(ctx, network, dstAddr)
 	if err != nil {
-		_ = ctl.Close()
+		ctl.Close()
 		return nil, err
 	}
 
-	if conn, err = ctl.WithConnection(conn); err != nil {
-		_ = ctl.Close()
-		_ = conn.Close()
+	proxyConn, err := ctl.WithConnection(conn)
+	if err != nil {
+		ctl.Close()
+		conn.Close()
 		return nil, err
 	}
 
-	return conn, nil
+	return proxyConn, nil
 }
 
 func (sess *ProxySession) Reset() {
