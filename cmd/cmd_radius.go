@@ -159,74 +159,78 @@ func (handler *radiusHandler) HandleAccessRequest(req *radius.Request) *radius.P
 
 	params := radius_pkg.ParsePeerCredentials(req.Packet)
 
-	for _, user := range handler.userList() {
+	user := handler.lookupUser(params.Username)
+	if user == nil {
 
-		if user.Username != params.Username || user.Suspended {
-			continue
-		}
+		slog.Info("RADIUS server: Unautorized",
+			slog.String("client", req.RemoteAddr.String()),
+			slog.String("username", params.Username),
+			slog.String("cause", "user not found"),
+			slog.String("user_ip", params.UserAddr.String()),
+			slog.String("proxy_host", params.ProxyHost.String()))
 
-		if subtle.ConstantTimeCompare([]byte(user.Password), []byte(params.Password)) != 1 {
+		return req.Response(radius.CodeAccessReject)
+	}
+
+	if subtle.ConstantTimeCompare([]byte(user.Password), []byte(params.Password)) != 1 {
+
+		slog.Info("RADIUS server: Unautorized",
+			slog.String("client", req.RemoteAddr.String()),
+			slog.String("username", params.Username),
+			slog.String("cause", "password invalid"),
+			slog.String("user_ip", params.UserAddr.String()),
+			slog.String("proxy_host", params.ProxyHost.String()))
+
+		return req.Response(radius.CodeAccessReject)
+	}
+
+	if allowedHost, allowedPort, err := net.SplitHostPort(user.ProxyHost); err == nil {
+
+		hostIP, hostPort := utils.SplitIPPort(params.ProxyHost)
+
+		if allow := net.ParseIP(allowedHost); allow != nil && hostIP != nil && !hostIP.Equal(allow) {
 
 			slog.Info("RADIUS server: Unautorized",
 				slog.String("client", req.RemoteAddr.String()),
 				slog.String("username", params.Username),
-				slog.String("cause", "password invalid"),
+				slog.String("cause", "host not allowed"),
+				slog.String("allowed_host", allowedHost),
 				slog.String("user_ip", params.UserAddr.String()),
 				slog.String("proxy_host", params.ProxyHost.String()))
 
-			break
+			return req.Response(radius.CodeAccessReject)
 		}
 
-		if allowedHost, allowedPort, err := net.SplitHostPort(user.ProxyHost); err == nil {
+		if allow, _ := strconv.Atoi(allowedPort); (allow > 0 && hostPort > 0) && hostPort != allow {
 
-			hostIP, hostPort := utils.SplitIPPort(params.ProxyHost)
-
-			if allow := net.ParseIP(allowedHost); allow != nil && hostIP != nil && !hostIP.Equal(allow) {
-
-				slog.Info("RADIUS server: Unautorized",
-					slog.String("client", req.RemoteAddr.String()),
-					slog.String("username", params.Username),
-					slog.String("cause", "host not allowed"),
-					slog.String("allowed_host", allowedHost),
-					slog.String("user_ip", params.UserAddr.String()),
-					slog.String("proxy_host", params.ProxyHost.String()))
-
-				break
-			}
-
-			if allow, _ := strconv.Atoi(allowedPort); (allow > 0 && hostPort > 0) && hostPort != allow {
-
-				slog.Info("RADIUS server: Unautorized",
-					slog.String("client", req.RemoteAddr.String()),
-					slog.String("username", params.Username),
-					slog.String("cause", "port not allowed"),
-					slog.Int("allowed_port", allow),
-					slog.String("user_ip", params.UserAddr.String()),
-					slog.String("proxy_host", params.ProxyHost.String()))
-
-				break
-			}
-		}
-
-		slog.Info("RADIUS server: Peer accepted",
-			slog.String("client", req.RemoteAddr.String()),
-			slog.String("username", params.Username),
-			slog.String("user_ip", params.UserAddr.String()),
-			slog.String("proxy_host", params.ProxyHost.String()))
-
-		reply := req.Response(radius.CodeAccessAccept)
-
-		if err := user.ToPeer().MarshalPacket(reply); err != nil {
-			slog.Warn("RADIUS server: Copy peer attributes",
+			slog.Info("RADIUS server: Unautorized",
 				slog.String("client", req.RemoteAddr.String()),
 				slog.String("username", params.Username),
-				slog.String("err", err.Error()))
-		}
+				slog.String("cause", "port not allowed"),
+				slog.Int("allowed_port", allow),
+				slog.String("user_ip", params.UserAddr.String()),
+				slog.String("proxy_host", params.ProxyHost.String()))
 
-		return reply
+			return req.Response(radius.CodeAccessReject)
+		}
 	}
 
-	return req.Response(radius.CodeAccessReject)
+	slog.Info("RADIUS server: Peer accepted",
+		slog.String("client", req.RemoteAddr.String()),
+		slog.String("username", params.Username),
+		slog.String("user_ip", params.UserAddr.String()),
+		slog.String("proxy_host", params.ProxyHost.String()))
+
+	reply := req.Response(radius.CodeAccessAccept)
+
+	if err := user.ToPeer().MarshalPacket(reply); err != nil {
+		slog.Warn("RADIUS server: Copy peer attributes",
+			slog.String("client", req.RemoteAddr.String()),
+			slog.String("username", params.Username),
+			slog.String("err", err.Error()))
+	}
+
+	return reply
 }
 
 func (handler *radiusHandler) HandleAccountingRequest(req *radius.Request) *radius.Packet {
@@ -306,4 +310,13 @@ func (handler *radiusHandler) userList() []RadiusUserConfig {
 	handler.mtx.Lock()
 	defer handler.mtx.Unlock()
 	return handler.cfg.Users
+}
+
+func (handler *radiusHandler) lookupUser(username string) *RadiusUserConfig {
+	for _, entry := range handler.userList() {
+		if entry.Username == username {
+			return &entry
+		}
+	}
+	return nil
 }
