@@ -32,12 +32,12 @@ func (mgr *Manager) Exec() error {
 		return err
 	}
 
-	configWatcher, cancelWatcher := utils.WatchFile(mgr.ConfigLocation)
-	defer cancelWatcher()
+	configWatcher := utils.NewFileWatcher(mgr.ConfigLocation)
+	defer configWatcher.Stop()
 
 	for {
 		select {
-		case <-configWatcher:
+		case <-configWatcher.C:
 			if err := mgr.loadConfig(); err != nil {
 				slog.Error("Reload config",
 					slog.String("err", err.Error()))

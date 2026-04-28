@@ -77,11 +77,11 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 	handler := &radiusHandler{}
 	handler.RefreshConfig(cfg.Radius)
 
-	configWatcher, cancelWatcher := utils.WatchFile(configLocation)
-	defer cancelWatcher()
+	configWatcher := utils.NewFileWatcher(configLocation)
+	defer configWatcher.Stop()
 
 	go func() {
-		for range configWatcher {
+		for range configWatcher.C {
 
 			cfg, err := utils.LoadConfigLocation[GlobalConfiguration](configLocation)
 			if err != nil {

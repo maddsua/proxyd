@@ -70,14 +70,14 @@ func cmd_rpc(args *utils.ArgList, exitCh <-chan os.Signal) {
 		slog.Debug("ENABLED")
 	}
 
-	configWatcher, cancelWatcher := utils.WatchFile(configLocation)
-	defer cancelWatcher()
+	configWatcher := utils.NewFileWatcher(configLocation)
+	defer configWatcher.Stop()
 
 	rpcHandler := rpcMethodHandler{}
 	rpcHandler.Refresh(cfg.RPC)
 
 	go func() {
-		for range configWatcher {
+		for range configWatcher.C {
 
 			cfg, err := utils.LoadConfigLocation[GlobalConfiguration](configLocation)
 			if err != nil {
