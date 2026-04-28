@@ -1,16 +1,13 @@
 package main
 
 import (
-	"crypto/subtle"
 	"log/slog"
-	"net"
 	"os"
-	"strconv"
 	"strings"
-	"sync"
 
 	radius "github.com/maddsua/layeh-radius"
 	radius_pkg "github.com/maddsua/proxyd/radius"
+	"github.com/maddsua/proxyd/radius/handler"
 	"github.com/maddsua/proxyd/utils"
 )
 
@@ -74,8 +71,14 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 		os.Exit(1)
 	}
 
-	handler := &radiusHandler{}
-	handler.RefreshConfig(cfg.Radius)
+	handler := &handler.Handler{}
+
+	if cfg.Radius.DacAddr != "" {
+		slog.Info("DAC", slog.String("addr", cfg.Radius.DacAddr))
+		handler.DAClient = &radius_pkg.Client{DacAddr: cfg.Radius.DacAddr, Secret: cfg.Radius.Secret}
+	}
+
+	handler.SetUsers(cfg.Radius.Users)
 
 	configWatcher := utils.NewFileWatcher(configLocation)
 	defer configWatcher.Stop()
@@ -90,9 +93,9 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 				continue
 			}
 
-			handler.RefreshConfig(cfg.Radius)
+			handler.SetUsers(cfg.Radius.Users)
 
-			slog.Info("Config updated")
+			slog.Info("User list updated")
 		}
 	}()
 
@@ -130,193 +133,4 @@ func cmd_radius(args *utils.ArgList, exitCh <-chan os.Signal) {
 	}
 
 	slog.Warn("RADIUS server exiting")
-}
-
-type radiusHandler struct {
-	peerSet map[string]struct{}
-	mtx     sync.Mutex
-	cfg     RadiusServerConfiguration
-}
-
-func (handler *radiusHandler) ServeRADIUS(wrt radius.ResponseWriter, req *radius.Request) {
-
-	switch req.Code {
-
-	case radius.CodeAccessRequest:
-		wrt.Write(handler.HandleAccessRequest(req))
-
-	case radius.CodeAccountingRequest:
-		wrt.Write(handler.HandleAccountingRequest(req))
-
-	default:
-		slog.Warn("RADIUS server: Unexpected code",
-			slog.String("client", req.RemoteAddr.String()),
-			slog.String("code", req.Code.String()))
-	}
-}
-
-func (handler *radiusHandler) HandleAccessRequest(req *radius.Request) *radius.Packet {
-
-	params := radius_pkg.ParsePeerCredentials(req.Packet)
-
-	user := handler.lookupUser(params.Username)
-	if user == nil {
-
-		slog.Info("RADIUS server: Unautorized",
-			slog.String("client", req.RemoteAddr.String()),
-			slog.String("username", params.Username),
-			slog.String("cause", "user not found"),
-			slog.String("user_ip", params.UserAddr.String()),
-			slog.String("proxy_host", params.ProxyHost.String()))
-
-		return req.Response(radius.CodeAccessReject)
-	}
-
-	if subtle.ConstantTimeCompare([]byte(user.Password), []byte(params.Password)) != 1 {
-
-		slog.Info("RADIUS server: Unautorized",
-			slog.String("client", req.RemoteAddr.String()),
-			slog.String("username", params.Username),
-			slog.String("cause", "password invalid"),
-			slog.String("user_ip", params.UserAddr.String()),
-			slog.String("proxy_host", params.ProxyHost.String()))
-
-		return req.Response(radius.CodeAccessReject)
-	}
-
-	if allowedHost, allowedPort, err := net.SplitHostPort(user.ProxyHost); err == nil {
-
-		hostIP, hostPort := utils.SplitIPPort(params.ProxyHost)
-
-		if allow := net.ParseIP(allowedHost); allow != nil && hostIP != nil && !hostIP.Equal(allow) {
-
-			slog.Info("RADIUS server: Unautorized",
-				slog.String("client", req.RemoteAddr.String()),
-				slog.String("username", params.Username),
-				slog.String("cause", "host not allowed"),
-				slog.String("allowed_host", allowedHost),
-				slog.String("user_ip", params.UserAddr.String()),
-				slog.String("proxy_host", params.ProxyHost.String()))
-
-			return req.Response(radius.CodeAccessReject)
-		}
-
-		if allow, _ := strconv.Atoi(allowedPort); (allow > 0 && hostPort > 0) && hostPort != allow {
-
-			slog.Info("RADIUS server: Unautorized",
-				slog.String("client", req.RemoteAddr.String()),
-				slog.String("username", params.Username),
-				slog.String("cause", "port not allowed"),
-				slog.Int("allowed_port", allow),
-				slog.String("user_ip", params.UserAddr.String()),
-				slog.String("proxy_host", params.ProxyHost.String()))
-
-			return req.Response(radius.CodeAccessReject)
-		}
-	}
-
-	slog.Info("RADIUS server: Peer accepted",
-		slog.String("client", req.RemoteAddr.String()),
-		slog.String("username", params.Username),
-		slog.String("user_ip", params.UserAddr.String()),
-		slog.String("proxy_host", params.ProxyHost.String()))
-
-	reply := req.Response(radius.CodeAccessAccept)
-
-	if err := user.ToPeer().MarshalPacket(reply); err != nil {
-		slog.Warn("RADIUS server: Copy peer attributes",
-			slog.String("client", req.RemoteAddr.String()),
-			slog.String("username", params.Username),
-			slog.String("err", err.Error()))
-	}
-
-	return reply
-}
-
-func (handler *radiusHandler) HandleAccountingRequest(req *radius.Request) *radius.Packet {
-
-	acct := radius_pkg.ParseAccountingDelta(req.Packet)
-
-	slog.Info("RADIUS server: Accounting",
-		slog.String("client", req.RemoteAddr.String()),
-		slog.String("sess", acct.SessionID),
-		slog.String("type", acct.Type.String()),
-		slog.Int("rx", int(acct.RxBytes)),
-		slog.Int("tx", int(acct.TxBytes)))
-
-	return req.Response(radius.CodeAccountingResponse)
-}
-
-func (handler *radiusHandler) RefreshConfig(cfg RadiusServerConfiguration) {
-
-	handler.mtx.Lock()
-	defer handler.mtx.Unlock()
-
-	handler.cfg = cfg
-
-	if dacAddr := cfg.DacAddr; dacAddr != "" {
-		slog.Debug("Executing DAC requests")
-		handler.execDAC(&radius_pkg.Client{DacAddr: dacAddr, Secret: cfg.Secret})
-		slog.Debug("DAC done")
-	}
-}
-
-func (handler *radiusHandler) execDAC(client *radius_pkg.Client) {
-
-	if handler.peerSet != nil {
-
-		for _, user := range handler.cfg.Users {
-
-			acctID := user.AccountingID()
-
-			if _, has := handler.peerSet[acctID]; has {
-				if err := client.SendCoA(user.ToPeer()); err != nil {
-					slog.Error("RADIUS DAC: Send CoA",
-						slog.String("addr", client.DacAddr),
-						slog.String("acct_id", acctID),
-						slog.String("err", err.Error()))
-				} else {
-					slog.Info("RADIUS DAC: Send CoA",
-						slog.String("addr", client.DacAddr),
-						slog.String("acct_id", acctID))
-				}
-
-				delete(handler.peerSet, acctID)
-			}
-		}
-
-		for acctID := range handler.peerSet {
-			if err := client.SendDM(acctID); err != nil {
-				slog.Error("RADIUS DAC: Send DM",
-					slog.String("addr", client.DacAddr),
-					slog.String("acct_id", acctID),
-					slog.String("err", err.Error()))
-			} else {
-				slog.Info("RADIUS DAC: Send DM",
-					slog.String("addr", client.DacAddr),
-					slog.String("acct_id", acctID))
-			}
-		}
-	}
-
-	handler.peerSet = map[string]struct{}{}
-
-	for _, user := range handler.cfg.Users {
-		handler.peerSet[user.AccountingID()] = struct{}{}
-	}
-}
-
-func (handler *radiusHandler) userList() []RadiusUserConfig {
-	handler.mtx.Lock()
-	defer handler.mtx.Unlock()
-	return handler.cfg.Users
-}
-
-func (handler *radiusHandler) lookupUser(username string) *RadiusUserConfig {
-	for _, entry := range handler.userList() {
-		if entry.Username == username {
-			return &entry
-		}
-	}
-	return nil
 }

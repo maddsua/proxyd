@@ -1,12 +1,9 @@
 package main
 
 import (
-	"net"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/maddsua/proxyd/local"
-	radius_pkg "github.com/maddsua/proxyd/radius"
+	radius_handler "github.com/maddsua/proxyd/radius/handler"
 	radius_manager "github.com/maddsua/proxyd/radius/manager"
 	"github.com/maddsua/proxyd/rpc"
 	rpc_client "github.com/maddsua/proxyd/rpc/client"
@@ -48,33 +45,8 @@ type RPCClientInstanceConfiguration struct {
 }
 
 type RadiusServerConfiguration struct {
-	ListenAddr string             `json:"listen_addr" yaml:"listen_addr"`
-	DacAddr    string             `json:"dac_addr" yaml:"dac_addr"`
-	Secret     string             `json:"secret" yaml:"secret"`
-	Users      []RadiusUserConfig `json:"users" yaml:"users"`
-}
-
-type RadiusUserConfig struct {
-	ProxyHost                string `json:"proxy_host" yaml:"proxy_host"`
-	RadiusSessionTTl         int    `json:"radius_session_ttl" yaml:"radius_session_ttl"`
-	RadiusSessionIdleTimeout int    `json:"radius_session_idle_timeout" yaml:"radius_session_idle_timeout"`
-	local.UserConfig         `yaml:",inline"`
-}
-
-func (cfg *RadiusUserConfig) AccountingID() string {
-	return cfg.ProxyHost + ":" + cfg.Username
-}
-
-func (cfg *RadiusUserConfig) ToPeer() *radius_pkg.PeerAuthorization {
-	return &radius_pkg.PeerAuthorization{
-		AcctSessionID:    cfg.AccountingID(),
-		ChargeableUserID: cfg.Username,
-		FramedIP:         net.ParseIP(cfg.OutboundAddr),
-		DNSServer:        net.ParseIP(cfg.DNS),
-		Timeout:          time.Duration(max(0, cfg.RadiusSessionTTl)),
-		IdleTimeout:      time.Duration(max(0, cfg.RadiusSessionIdleTimeout)),
-		ConnectionLimit:  cfg.MaxConn,
-		MaxRxRate:        max(0, int64(cfg.BandwidthKbit)*1000),
-		MaxTxRate:        max(0, int64(cfg.BandwidthKbit)*1000),
-	}
+	ListenAddr string                            `json:"listen_addr" yaml:"listen_addr"`
+	DacAddr    string                            `json:"dac_addr" yaml:"dac_addr"`
+	Secret     string                            `json:"secret" yaml:"secret"`
+	Users      []radius_handler.RadiusUserConfig `json:"users" yaml:"users"`
 }
