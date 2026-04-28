@@ -1,12 +1,11 @@
 package main
 
 import (
-	"github.com/google/uuid"
 	"github.com/maddsua/proxyd/local"
 	radius_handler "github.com/maddsua/proxyd/radius/handler"
 	radius_manager "github.com/maddsua/proxyd/radius/manager"
-	"github.com/maddsua/proxyd/rpc"
 	rpc_client "github.com/maddsua/proxyd/rpc/client"
+	rpc_handler "github.com/maddsua/proxyd/rpc/handler"
 )
 
 const GlobalConfigLocation = "/etc/proxyd/proxyd.yml"
@@ -33,15 +32,8 @@ type ManagerConfiguration struct {
 }
 
 type RPCServerConfiguration struct {
-	ListenAddr string                           `json:"listen_addr" yaml:"listen_addr"`
-	Instances  []RPCClientInstanceConfiguration `json:"instances" yaml:"instances"`
-}
-
-type RPCClientInstanceConfiguration struct {
-	ID     uuid.UUID        `json:"id" yaml:"id"`
-	Secret rpc.RawSecretKey `json:"secret" yaml:"secret"`
-
-	local.LocalManagerConfig `yaml:",inline"`
+	ListenAddr                 string `json:"listen_addr" yaml:"listen_addr"`
+	rpc_handler.HandlerOptions `yaml:",inline"`
 }
 
 type RadiusServerConfiguration struct {
