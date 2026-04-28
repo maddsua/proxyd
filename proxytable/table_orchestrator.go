@@ -164,6 +164,11 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 	orch.mtx.Lock()
 	defer orch.mtx.Unlock()
 
+	if orch.rebalanceInit.CompareAndSwap(false, true) {
+		orch.rebalanceDone = make(chan struct{})
+		go orch.rebalanceRoutine()
+	}
+
 	staleMap := map[string]*serviceSlot{}
 	if orch.slots == nil {
 		orch.slots = map[string]*serviceSlot{}
@@ -171,20 +176,21 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 		maps.Copy(staleMap, orch.slots)
 	}
 
-	if orch.rebalanceInit.CompareAndSwap(false, true) {
-		orch.rebalanceDone = make(chan struct{})
-		go orch.rebalanceRoutine()
-	}
-
 	// compare the new proxy table agains existing state
 	for _, entry := range services {
 
-		bindKey := entry.bindKey()
+		key := entry.bindKey()
+		slot := orch.slots[key]
+
+		if slot != nil && staleMap[key] == nil {
+			slog.Warn("Duplicated service bind detected. Service NOT started",
+				slog.String("bind", entry.BindAddr),
+				slog.String("type", entry.Service))
+			continue
+		}
 
 		// mark this slot as updated
-		delete(staleMap, bindKey)
-
-		slot := orch.slots[bindKey]
+		delete(staleMap, key)
 
 		// repalce slot if it isn't up to date
 		if !slot.satisfies(entry.ProxyServiceOptions) {
@@ -201,7 +207,7 @@ func (orch *Orchestrator) RefreshTable(ctx context.Context, services []ProxyServ
 						dnsTester: &orch.dnsTester,
 					},
 				}
-				orch.slots[bindKey] = slot
+				orch.slots[key] = slot
 
 			} else if slot.svc != nil {
 
