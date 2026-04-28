@@ -14,7 +14,7 @@ import (
 	"github.com/maddsua/proxyd/rpc/model"
 )
 
-type RPCClientConfig struct {
+type RPCClientOptions struct {
 	EndpointURL string `json:"endpoint_url" yaml:"endpoint_url"`
 	SecretToken string `json:"secret_token" yaml:"secret_token"`
 }

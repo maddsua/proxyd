@@ -11,10 +11,10 @@ import (
 const GlobalConfigLocation = "/etc/proxyd/proxyd.yml"
 
 type GlobalConfiguration struct {
-	Debug   bool                      `json:"debug" yaml:"debug"`
-	Manager ManagerConfiguration      `json:"manager" yaml:"manager"`
-	RPC     RPCServerConfiguration    `json:"rpc_server" yaml:"rpc_server"`
-	Radius  RadiusServerConfiguration `json:"radius_server" yaml:"radius_server"`
+	Debug   bool                `json:"debug" yaml:"debug"`
+	Manager ManagerOptions      `json:"manager" yaml:"manager"`
+	RPC     RPCServerOptions    `json:"rpc_server" yaml:"rpc_server"`
+	Radius  RadiusServerOptions `json:"radius_server" yaml:"radius_server"`
 }
 
 const (
@@ -23,22 +23,22 @@ const (
 	ManagerTypeRadius = "radius"
 )
 
-type ManagerConfiguration struct {
+type ManagerOptions struct {
 	Type string `json:"type" yaml:"type"`
 
-	rpc_client.RPCClientConfig   `yaml:",inline"`
-	local.LocalManagerConfig     `yaml:",inline"`
+	rpc_client.RPCClientOptions  `yaml:",inline"`
+	local.LocalManagerOptions    `yaml:",inline"`
 	radius_manager.RadiusOptions `yaml:",inline"`
 }
 
-type RPCServerConfiguration struct {
+type RPCServerOptions struct {
 	ListenAddr                 string `json:"listen_addr" yaml:"listen_addr"`
 	rpc_handler.HandlerOptions `yaml:",inline"`
 }
 
-type RadiusServerConfiguration struct {
-	ListenAddr string                            `json:"listen_addr" yaml:"listen_addr"`
-	DacAddr    string                            `json:"dac_addr" yaml:"dac_addr"`
-	Secret     string                            `json:"secret" yaml:"secret"`
-	Users      []radius_handler.RadiusUserConfig `json:"users" yaml:"users"`
+type RadiusServerOptions struct {
+	ListenAddr string                             `json:"listen_addr" yaml:"listen_addr"`
+	DacAddr    string                             `json:"dac_addr" yaml:"dac_addr"`
+	Secret     string                             `json:"secret" yaml:"secret"`
+	Users      []radius_handler.RadiusUserOptions `json:"users" yaml:"users"`
 }

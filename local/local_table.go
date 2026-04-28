@@ -6,10 +6,10 @@ import (
 )
 
 type ConfigurationWrapper struct {
-	Manager LocalManagerConfig `json:"manager" yaml:"manager"`
+	Manager LocalManagerOptions `json:"manager" yaml:"manager"`
 }
 
-type LocalManagerConfig struct {
+type LocalManagerOptions struct {
 	Services []ProxyServiceConfig `json:"services" yaml:"services"`
 }
 

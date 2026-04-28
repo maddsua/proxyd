@@ -35,17 +35,17 @@ func LoadGenericFile[T any](location string) (*T, error) {
 
 	defer file.Close()
 
-	var cfg T
+	var val T
 
 	switch strings.ToLower(path.Ext(location)) {
 
 	case ".json":
-		if err := json.NewDecoder(file).Decode(&cfg); err != nil {
+		if err := json.NewDecoder(file).Decode(&val); err != nil {
 			return nil, fmt.Errorf("decode json: %v", err)
 		}
 
 	case ".yml", ".yaml":
-		if err := yaml.NewDecoder(file).Decode(&cfg); err != nil {
+		if err := yaml.NewDecoder(file).Decode(&val); err != nil {
 			return nil, fmt.Errorf("decode yaml: %v", err)
 		}
 
@@ -53,7 +53,7 @@ func LoadGenericFile[T any](location string) (*T, error) {
 		return nil, errors.New("unsupported file type")
 	}
 
-	return &cfg, nil
+	return &val, nil
 }
 
 func NewFileWatcher(location string) *FileWatcher {

@@ -20,7 +20,7 @@ type ClientInstanceOptions struct {
 	ID     uuid.UUID        `json:"id" yaml:"id"`
 	Secret rpc.RawSecretKey `json:"secret" yaml:"secret"`
 
-	local.LocalManagerConfig `yaml:",inline"`
+	local.LocalManagerOptions `yaml:",inline"`
 }
 
 type MethodHandler struct {

@@ -84,7 +84,7 @@ func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 
 	case ManagerTypeRPC:
 
-		opts := cfg.Manager.RPCClientConfig
+		opts := cfg.Manager.RPCClientOptions
 
 		endpointURL, _ := url.Parse(opts.EndpointURL)
 		if endpointURL == nil || endpointURL.Scheme == "" || endpointURL.Host == "" {

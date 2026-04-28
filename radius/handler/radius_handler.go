@@ -14,35 +14,35 @@ import (
 	"github.com/maddsua/proxyd/utils"
 )
 
-type RadiusUserConfig struct {
+type RadiusUserOptions struct {
 	ProxyHost                string `json:"proxy_host" yaml:"proxy_host"`
 	RadiusSessionTTl         int    `json:"radius_session_ttl" yaml:"radius_session_ttl"`
 	RadiusSessionIdleTimeout int    `json:"radius_session_idle_timeout" yaml:"radius_session_idle_timeout"`
 	local.UserConfig         `yaml:",inline"`
 }
 
-func (cfg *RadiusUserConfig) AccountingID() string {
-	return cfg.ProxyHost + ":" + cfg.Username
+func (opts *RadiusUserOptions) AccountingID() string {
+	return opts.ProxyHost + ":" + opts.Username
 }
 
-func (cfg *RadiusUserConfig) ToPeer() *radius_pkg.PeerAuthorization {
+func (opts *RadiusUserOptions) ToPeer() *radius_pkg.PeerAuthorization {
 	return &radius_pkg.PeerAuthorization{
-		AcctSessionID:    cfg.AccountingID(),
-		ChargeableUserID: cfg.Username,
-		FramedIP:         net.ParseIP(cfg.OutboundAddr),
-		DNSServer:        net.ParseIP(cfg.DNS),
-		Timeout:          time.Duration(max(0, cfg.RadiusSessionTTl)),
-		IdleTimeout:      time.Duration(max(0, cfg.RadiusSessionIdleTimeout)),
-		ConnectionLimit:  cfg.MaxConn,
-		MaxRxRate:        max(0, int64(cfg.BandwidthKbit)*1000),
-		MaxTxRate:        max(0, int64(cfg.BandwidthKbit)*1000),
+		AcctSessionID:    opts.AccountingID(),
+		ChargeableUserID: opts.Username,
+		FramedIP:         net.ParseIP(opts.OutboundAddr),
+		DNSServer:        net.ParseIP(opts.DNS),
+		Timeout:          time.Duration(max(0, opts.RadiusSessionTTl)),
+		IdleTimeout:      time.Duration(max(0, opts.RadiusSessionIdleTimeout)),
+		ConnectionLimit:  opts.MaxConn,
+		MaxRxRate:        max(0, int64(opts.BandwidthKbit)*1000),
+		MaxTxRate:        max(0, int64(opts.BandwidthKbit)*1000),
 	}
 }
 
 type Handler struct {
 	DAClient *radius_pkg.Client
 
-	userList []RadiusUserConfig
+	userList []RadiusUserOptions
 	mtx      sync.Mutex
 	peerSet  map[string]struct{}
 }
@@ -156,7 +156,7 @@ func (rh *Handler) HandleAccountingRequest(req *radius.Request) *radius.Packet {
 	return req.Response(radius.CodeAccountingResponse)
 }
 
-func (rh *Handler) SetUsers(users []RadiusUserConfig) {
+func (rh *Handler) SetUsers(users []RadiusUserOptions) {
 	rh.mtx.Lock()
 	defer rh.mtx.Unlock()
 	rh.userList = users
@@ -216,7 +216,7 @@ func (rh *Handler) execDAC() {
 	}
 }
 
-func (rh *Handler) lookupUser(username string) *RadiusUserConfig {
+func (rh *Handler) lookupUser(username string) *RadiusUserOptions {
 
 	rh.mtx.Lock()
 	defer rh.mtx.Unlock()
