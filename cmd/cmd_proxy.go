@@ -60,7 +60,7 @@ func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 		}
 	}
 
-	cfg, err := utils.LoadConfigLocation[GlobalConfiguration](configLocation)
+	cfg, err := utils.LoadGenericFile[GlobalConfiguration](configLocation)
 	if err != nil {
 		slog.Error("Load config",
 			slog.String("err", err.Error()))

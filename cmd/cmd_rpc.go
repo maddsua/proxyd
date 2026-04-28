@@ -58,7 +58,7 @@ func cmd_rpc(args *utils.ArgList, exitCh <-chan os.Signal) {
 		}
 	}
 
-	cfg, err := utils.LoadConfigLocation[GlobalConfiguration](configLocation)
+	cfg, err := utils.LoadGenericFile[GlobalConfiguration](configLocation)
 	if err != nil {
 		slog.Error("Load config",
 			slog.String("err", err.Error()))
@@ -79,7 +79,7 @@ func cmd_rpc(args *utils.ArgList, exitCh <-chan os.Signal) {
 	go func() {
 		for range configWatcher.C {
 
-			cfg, err := utils.LoadConfigLocation[GlobalConfiguration](configLocation)
+			cfg, err := utils.LoadGenericFile[GlobalConfiguration](configLocation)
 			if err != nil {
 				slog.Error("Reload config",
 					slog.String("err", err.Error()))

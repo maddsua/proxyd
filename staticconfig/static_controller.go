@@ -66,7 +66,7 @@ func (mgr *Manager) initExec() error {
 
 func (mgr *Manager) loadConfig() error {
 
-	cfg, err := utils.LoadConfigLocation[ConfigurationWrapper](mgr.ConfigLocation)
+	cfg, err := utils.LoadGenericFile[ConfigurationWrapper](mgr.ConfigLocation)
 	if err != nil {
 		return err
 	}

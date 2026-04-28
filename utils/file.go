@@ -26,11 +26,11 @@ func FindFileLocation(locations ...string) (string, error) {
 	return "", errors.New("no location exists")
 }
 
-func LoadConfigLocation[T any](location string) (*T, error) {
+func LoadGenericFile[T any](location string) (*T, error) {
 
 	file, err := os.Open(location)
 	if err != nil {
-		return nil, fmt.Errorf("open config: %v", err)
+		return nil, err
 	}
 
 	defer file.Close()
@@ -41,16 +41,16 @@ func LoadConfigLocation[T any](location string) (*T, error) {
 
 	case ".json":
 		if err := json.NewDecoder(file).Decode(&cfg); err != nil {
-			return nil, fmt.Errorf("decode json config: %v", err)
+			return nil, fmt.Errorf("decode json: %v", err)
 		}
 
 	case ".yml", ".yaml":
 		if err := yaml.NewDecoder(file).Decode(&cfg); err != nil {
-			return nil, fmt.Errorf("decode yaml config: %v", err)
+			return nil, fmt.Errorf("decode yaml: %v", err)
 		}
 
 	default:
-		return nil, errors.New("unsupported config file type")
+		return nil, errors.New("unsupported file type")
 	}
 
 	return &cfg, nil
