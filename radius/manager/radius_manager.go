@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -25,6 +24,10 @@ type ProxySlotOptions struct {
 	http_pkg.HttpServiceOptions `yaml:",inline"`
 }
 
+func (entry *ProxySlotOptions) bindKey() string {
+	return "tcp/" + entry.BindAddr
+}
+
 type RadiusOptions struct {
 	AuthAddr string `json:"radius_auth_addr" yaml:"radius_auth_addr"`
 	AcctAddr string `json:"radius_acct_addr" yaml:"radius_acct_addr"`
@@ -37,8 +40,8 @@ type Manager struct {
 	Slots []ProxySlotOptions
 
 	mtx      sync.Mutex
-	execInit atomic.Bool
-	execDone chan struct{}
+	init     atomic.Bool
+	doneChan chan struct{}
 
 	auth *peerAuthenticator
 	dac  *radius.PacketServer
@@ -52,7 +55,7 @@ func (mgr *Manager) Exec() error {
 		return err
 	}
 
-	<-mgr.execDone
+	<-mgr.doneChan
 
 	return nil
 }
@@ -62,21 +65,31 @@ func (mgr *Manager) initExec() error {
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 
-	if !mgr.execInit.CompareAndSwap(false, true) {
+	if !mgr.init.CompareAndSwap(false, true) {
 		return errors.New("manager already running")
 	}
 
-	mgr.execDone = make(chan struct{})
+	mgr.doneChan = make(chan struct{})
 
-	if err := mgr.setSlots(context.Background(), mgr.Slots); err != nil {
-		return err
+	client := radiuspkg.Client{
+		AuthAddr: mgr.Opts.AuthAddr,
+		AcctAddr: mgr.Opts.AcctAddr,
+		Secret:   mgr.Opts.Secret,
 	}
+
+	if client.AuthAddr == "" {
+		return fmt.Errorf("no auth/acct server addr set")
+	} else if client.Secret == "" {
+		return fmt.Errorf("no auth/acct secret set")
+	}
+
+	mgr.auth = &peerAuthenticator{Client: client}
 
 	if err := mgr.initDac(); err != nil {
 		return fmt.Errorf("init dac: %v", err)
 	}
 
-	return nil
+	return mgr.initServices()
 }
 
 func (mgr *Manager) initDac() error {
@@ -116,59 +129,19 @@ func (mgr *Manager) initDac() error {
 	return nil
 }
 
-func (mgr *Manager) SetSlots(ctx context.Context, slots []ProxySlotOptions) error {
-	mgr.mtx.Lock()
-	defer mgr.mtx.Unlock()
-	return mgr.setSlots(ctx, slots)
-}
+func (mgr *Manager) initServices() error {
 
-func (mgr *Manager) setSlots(ctx context.Context, slots []ProxySlotOptions) error {
+	mgr.services = map[string]proxyd.ProxyService{}
 
-	if mgr.auth == nil {
+	for _, entry := range mgr.Slots {
 
-		client := radiuspkg.Client{
-			AuthAddr: mgr.Opts.AuthAddr,
-			AcctAddr: mgr.Opts.AcctAddr,
-			Secret:   mgr.Opts.Secret,
-		}
+		key := entry.bindKey()
 
-		if client.AuthAddr == "" {
-			return fmt.Errorf("no auth/acct server addr set")
-		} else if client.Secret == "" {
-			return fmt.Errorf("no auth/acct secret set")
-		}
-
-		mgr.auth = &peerAuthenticator{Client: client}
-	}
-
-	staleMap := map[string]proxyd.ProxyService{}
-	if mgr.services == nil {
-		mgr.services = map[string]proxyd.ProxyService{}
-	} else {
-		maps.Copy(staleMap, mgr.services)
-	}
-
-	for _, entry := range slots {
-
-		delete(staleMap, entry.BindAddr)
-
-		if svc := mgr.services[entry.BindAddr]; svc != nil {
-
-			if svc.ProxyService() == entry.Service {
-				continue
-			}
-
-			if err := svc.Shutdown(ctx); err != nil {
-				slog.Error("RADIUS Manager: Shutdown service",
-					slog.String("bind_addr", svc.BindAddr().String()),
-					slog.String("type", svc.ProxyService()),
-					slog.String("err", err.Error()))
-				continue
-			}
-
-			slog.Info("RADIUS Manager: Stop service",
-				slog.String("bind_addr", svc.BindAddr().String()),
-				slog.String("type", svc.ProxyService()))
+		if _, exists := mgr.services[key]; exists {
+			slog.Warn("Duplicated service bind detected. Service NOT started",
+				slog.String("bind", entry.BindAddr),
+				slog.String("type", entry.Service))
+			continue
 		}
 
 		svc, err := newService(entry, mgr.auth)
@@ -184,25 +157,8 @@ func (mgr *Manager) setSlots(ctx context.Context, slots []ProxySlotOptions) erro
 			slog.String("bind_addr", svc.BindAddr().String()),
 			slog.String("type", svc.ProxyService()))
 
-		mgr.services[entry.BindAddr] = svc
+		mgr.services[key] = svc
 	}
-
-	for _, svc := range staleMap {
-
-		if err := svc.Shutdown(ctx); err != nil {
-			slog.Error("RADIUS Manager: Shutdown service",
-				slog.String("bind_addr", svc.BindAddr().String()),
-				slog.String("type", svc.ProxyService()),
-				slog.String("err", err.Error()))
-			continue
-		}
-
-		slog.Info("RADIUS Manager: Stop service",
-			slog.String("bind_addr", svc.BindAddr().String()),
-			slog.String("type", svc.ProxyService()))
-	}
-
-	mgr.Slots = slots
 
 	return nil
 }
@@ -212,8 +168,8 @@ func (mgr *Manager) Shutdown(ctx context.Context) error {
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 
-	if mgr.execInit.CompareAndSwap(true, false) {
-		close(mgr.execDone)
+	if mgr.init.CompareAndSwap(true, false) {
+		close(mgr.doneChan)
 	}
 
 	var errList []error
@@ -236,11 +192,6 @@ func (mgr *Manager) Shutdown(ctx context.Context) error {
 }
 
 func newService(slot ProxySlotOptions, auth *peerAuthenticator) (proxyd.ProxyService, error) {
-
-	if auth == nil {
-		return nil, errors.New("nil peer authenticator")
-	}
-
 	switch slot.Service {
 	case http_pkg.ServiceType:
 		return http_pkg.NewService(slot.BindAddr, auth, slot.HttpServiceOptions)
