@@ -8,10 +8,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/maddsua/proxyd/local"
 	"github.com/maddsua/proxyd/rpc"
 	rpc_handler "github.com/maddsua/proxyd/rpc/handler"
 	rpc_model "github.com/maddsua/proxyd/rpc/model"
-	static "github.com/maddsua/proxyd/staticconfig"
 	"github.com/maddsua/proxyd/utils"
 )
 
@@ -182,7 +182,7 @@ func (handler *rpcMethodHandler) OnProxyTable(ctx context.Context, token *rpc.In
 	slog.Debug("RPC: Proxy table request",
 		slog.String("instance_id", instance.ID.String()))
 
-	return &rpc_model.ProxyTable{Services: static.ProxyServiceTable(instance.Services)}, nil
+	return &rpc_model.ProxyTable{Services: local.ProxyServiceTable(instance.Services)}, nil
 }
 
 func (handler *rpcMethodHandler) authorizeInstance(token *rpc.InstanceToken) (*RPCClientInstanceConfiguration, error) {

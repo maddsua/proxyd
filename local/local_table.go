@@ -1,4 +1,4 @@
-package static
+package local
 
 import (
 	http_pkg "github.com/maddsua/proxyd/http"
@@ -6,10 +6,10 @@ import (
 )
 
 type ConfigurationWrapper struct {
-	Manager StaticManagerConfig `json:"manager" yaml:"manager"`
+	Manager LocalManagerConfig `json:"manager" yaml:"manager"`
 }
 
-type StaticManagerConfig struct {
+type LocalManagerConfig struct {
 	Services []ProxyServiceConfig `json:"services" yaml:"services"`
 }
 

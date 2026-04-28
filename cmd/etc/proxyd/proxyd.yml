@@ -1,7 +1,7 @@
 # comment this out to disable verbose service logging
 debug: true
 manager:
-  type: static
+  type: local
   services:
     - bind_addr: 127.0.0.1:1080
       type: socks

@@ -22,7 +22,7 @@ Anyway, as of now I don't got too much stuff going on here. For now it's just th
 
 ### Management interfaces
 
-#### Static config
+#### Local config
 
 If you don't feel like enjoying dynamic user configuration, you could specify everything in a config file. This would defeat the purpose of this project entirely but hey, you have the option to do that anyway.
 
@@ -30,7 +30,7 @@ A sample config would look something like this:
 
 ```yml
 manager:
-  type: static
+  type: local
   services:
     - bind_addr: 172.217.19.174:1080
       type: socks

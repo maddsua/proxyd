@@ -5,12 +5,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/maddsua/proxyd/local"
 	radius_pkg "github.com/maddsua/proxyd/radius"
 	radius_manager "github.com/maddsua/proxyd/radius/manager"
 	"github.com/maddsua/proxyd/rpc"
 	rpc_client "github.com/maddsua/proxyd/rpc/client"
-	static_config "github.com/maddsua/proxyd/staticconfig"
-	static_manager "github.com/maddsua/proxyd/staticconfig"
 )
 
 const GlobalConfigLocation = "/etc/proxyd/proxyd.yml"
@@ -23,7 +22,7 @@ type GlobalConfiguration struct {
 }
 
 const (
-	ManagerTypeStatic = "static"
+	ManagerTypeLocal  = "local"
 	ManagerTypeRPC    = "rpc"
 	ManagerTypeRadius = "radius"
 )
@@ -31,9 +30,9 @@ const (
 type ManagerConfiguration struct {
 	Type string `json:"type" yaml:"type"`
 
-	rpc_client.RPCClientConfig         `yaml:",inline"`
-	static_manager.StaticManagerConfig `yaml:",inline"`
-	radius_manager.RadiusOptions       `yaml:",inline"`
+	rpc_client.RPCClientConfig   `yaml:",inline"`
+	local.LocalManagerConfig     `yaml:",inline"`
+	radius_manager.RadiusOptions `yaml:",inline"`
 }
 
 type RPCServerConfiguration struct {
@@ -45,7 +44,7 @@ type RPCClientInstanceConfiguration struct {
 	ID     uuid.UUID        `json:"id" yaml:"id"`
 	Secret rpc.RawSecretKey `json:"secret" yaml:"secret"`
 
-	static_manager.StaticManagerConfig `yaml:",inline"`
+	local.LocalManagerConfig `yaml:",inline"`
 }
 
 type RadiusServerConfiguration struct {
@@ -59,7 +58,7 @@ type RadiusUserConfig struct {
 	ProxyHost                string `json:"proxy_host" yaml:"proxy_host"`
 	RadiusSessionTTl         int    `json:"radius_session_ttl" yaml:"radius_session_ttl"`
 	RadiusSessionIdleTimeout int    `json:"radius_session_idle_timeout" yaml:"radius_session_idle_timeout"`
-	static_config.UserConfig `yaml:",inline"`
+	local.UserConfig         `yaml:",inline"`
 }
 
 func (cfg *RadiusUserConfig) AccountingID() string {

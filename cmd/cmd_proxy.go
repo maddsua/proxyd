@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/maddsua/proxyd"
-	radiusmanager "github.com/maddsua/proxyd/radius/manager"
-	rpc_pkg "github.com/maddsua/proxyd/rpc"
+	"github.com/maddsua/proxyd/local"
+	radius "github.com/maddsua/proxyd/radius/manager"
+	"github.com/maddsua/proxyd/rpc"
 	rpc_client "github.com/maddsua/proxyd/rpc/client"
 	rpc_manager "github.com/maddsua/proxyd/rpc/manager"
-	static_pkg "github.com/maddsua/proxyd/staticconfig"
 	"github.com/maddsua/proxyd/utils"
 )
 
@@ -76,11 +76,11 @@ func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 
 	switch cfg.Manager.Type {
 
-	case ManagerTypeStatic:
+	case ManagerTypeLocal:
 
-		slog.Info("Load static configuration")
+		slog.Info("Load local configuration")
 
-		manager = &static_pkg.Manager{ConfigLocation: configLocation}
+		manager = &local.Manager{ConfigLocation: configLocation}
 
 	case ManagerTypeRPC:
 
@@ -94,7 +94,7 @@ func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 		}
 
 		client := rpc_client.Client{EndpointURL: endpointURL.String()}
-		if client.Token, err = rpc_pkg.ParseInstanceToken(opts.SecretToken); err != nil {
+		if client.Token, err = rpc.ParseInstanceToken(opts.SecretToken); err != nil {
 			slog.Error("Invalid RPC token",
 				slog.String("err", err.Error()))
 			os.Exit(1)
@@ -129,9 +129,9 @@ func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 			os.Exit(1)
 		}
 
-		slots := make([]radiusmanager.ProxySlotOptions, len(svclist))
+		slots := make([]radius.ProxySlotOptions, len(svclist))
 		for idx, entry := range svclist {
-			slots[idx] = radiusmanager.ProxySlotOptions{
+			slots[idx] = radius.ProxySlotOptions{
 				BindAddr:           entry.BindAddr,
 				Service:            entry.Type,
 				HttpServiceOptions: entry.HttpServiceOptions,
@@ -154,7 +154,7 @@ func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 				slog.String("addr", opts.DacAddr))
 		}
 
-		manager = &radiusmanager.Manager{Opts: opts, Slots: slots}
+		manager = &radius.Manager{Opts: opts, Slots: slots}
 
 	default:
 		slog.Error("Service manager not configured")

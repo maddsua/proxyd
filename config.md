@@ -6,9 +6,9 @@ A config location can be by using --config flag. By default proxyd tries to load
 debug: true|false # enables debug logging
 
 manager: # proxy server configuration
-  type: static|rpc|radius # which type of proxy manager to use
+  type: local|rpc|radius # which type of proxy manager to use
 
-  # ---- STATIC ONLY ----
+  # ---- LOCAL ONLY ----
   services:
     - bind_addr: <ip:port> # proxy service bind address
       type: socks|http # proxy service type
