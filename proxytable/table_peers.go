@@ -212,40 +212,35 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 			sessionReset = true
 		}
 
-		if wantDNS := entry.DNS; peer.DNS.ServerAddr != wantDNS {
+		if wantDNS, err := unwrapDnsServerAddr(ctx, auth.dnsTester, entry.DNS); err != nil {
 
-			slog.Info("PeerAuthenticator: Update DNS server",
+			slog.Warn("PeerAuthenticator: New DNS server unreachable",
 				slog.String("slot", auth.slotName),
 				slog.String("peer", peer.displayName()),
-				slog.String("dns_server", wantDNS))
+				slog.String("dns", entry.DNS),
+				slog.String("err", err.Error()))
 
-			if auth.dnsTester != nil && wantDNS != "" {
+		} else if !peer.DNS.Server.Load().Equal(wantDNS) {
 
-				if err := auth.dnsTester.Test(ctx, wantDNS); err != nil {
-
-					slog.Warn("PeerAuthenticator: Peer's DNS server unreachable. Default DNS server will be used",
-						slog.String("slot", auth.slotName),
-						slog.String("peer", peer.displayName()),
-						slog.String("dns_server", wantDNS),
-						slog.String("err", err.Error()))
-
-					wantDNS = ""
-				}
+			if peerExisted {
+				slog.Info("PeerAuthenticator: Update DNS server",
+					slog.String("slot", auth.slotName),
+					slog.String("peer", peer.displayName()),
+					slog.String("dns", wantDNS.Addr()))
 			}
 
-			peer.DNS.ServerAddr = wantDNS
+			peer.DNS.Server.Store(wantDNS)
 		}
 
-		wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr)
-		if err != nil {
+		if wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr); err != nil {
+
 			slog.Warn("PeerAuthenticator: New outbound IP cannot be assigned",
 				slog.String("slot", auth.slotName),
 				slog.String("peer", peer.displayName()),
 				slog.String("addr", entry.OutboundAddr),
 				slog.String("err", err.Error()))
-		}
 
-		if wantOutboundAddr.String() != peer.Dialer.OutboundAddr.String() {
+		} else if !peer.Dialer.OutboundAddr.Load().Equal(wantOutboundAddr) {
 
 			if peerExisted {
 				slog.Info("PeerAuthenticator: Update outbound address",
@@ -254,7 +249,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 					slog.String("addr", wantOutboundAddr.String()))
 			}
 
-			peer.Dialer.OutboundAddr = wantOutboundAddr
+			peer.Dialer.OutboundAddr.Store(wantOutboundAddr)
 			sessionReset = true
 		}
 
@@ -306,8 +301,8 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 			slog.Info("PeerAuthenticator: Add peer",
 				slog.String("slot", auth.slotName),
 				slog.String("peer", peer.displayName()),
-				slog.String("addr", peer.Dialer.OutboundAddr.String()),
-				slog.String("dns", peer.DNS.ServerName()),
+				slog.String("addr", peer.Dialer.OutboundAddr.Load().String()),
+				slog.String("dns", peer.DNS.Server.Load().Name()),
 				slog.Int("max_conn", peer.Pool.ConnectionLimit()),
 				slog.Int64("rx_rate", rxMax),
 				slog.Int64("tx_rate", txMax))
@@ -393,6 +388,21 @@ func unwrapPeerOutboundIP(addr string) (*proxyd.PeerAddr, error) {
 	}
 
 	return &proxyd.PeerAddr{IP: ip}, nil
+}
+
+func unwrapDnsServerAddr(ctx context.Context, dnsTester *proxyd.DNSTester, addr string) (*proxyd.DNSAddr, error) {
+
+	if addr == "" {
+		return nil, nil
+	}
+
+	if dnsTester != nil {
+		if err := dnsTester.Test(ctx, addr); err != nil {
+			return nil, err
+		}
+	}
+
+	return &proxyd.DNSAddr{ServerAddr: addr}, nil
 }
 
 func unwrapUserInfo(userinfo *ProxyPeerUserInfo) string {

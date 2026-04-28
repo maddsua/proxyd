@@ -41,7 +41,7 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 			slog.String("peer_addr", req.RemoteAddr),
 			slog.String("peer_id", sess.PeerID),
 			slog.String("dst_addr", dstAddr),
-			slog.String("dns", sess.DNS.ServerName()),
+			slog.String("dns", sess.DNS.Server.Load().Name()),
 			slog.String("err", err.Error()))
 
 		wrt.WriteHeader(http.StatusBadGateway)
@@ -118,7 +118,7 @@ func ServeConnect(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 		slog.String("peer_addr", req.RemoteAddr),
 		slog.String("peer_id", sess.PeerID),
 		slog.String("dst_addr", dstAddr),
-		slog.String("dns", sess.DNS.ServerName()))
+		slog.String("dns", sess.DNS.Server.Load().Name()))
 
 	if err := utils.PipeDuplexContext(req.Context(), dstConn, conn); err != nil {
 		slog.Debug("HTTP: ServeConnect: utils.PipeDuplex",

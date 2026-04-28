@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/maddsua/proxyd/utils"
@@ -11,7 +12,7 @@ import (
 
 // ProxyDialer simplifies dialing proxy destinations
 type ProxyDialer struct {
-	OutboundAddr *PeerAddr
+	OutboundAddr atomic.Pointer[PeerAddr]
 }
 
 func (pd *ProxyDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
@@ -23,7 +24,7 @@ func (pd *ProxyDialer) DialContext(ctx context.Context, network, address string)
 
 	switch network {
 	case "tcp":
-		dialer.LocalAddr = pd.OutboundAddr.TCPDialAddr()
+		dialer.LocalAddr = pd.OutboundAddr.Load().TCPDialAddr()
 		return dialer.DialContext(ctx, network, address)
 	case "udp":
 		return nil, fmt.Errorf("udp dialer not implemented")
@@ -38,6 +39,10 @@ func (pd *ProxyDialer) DialContext(ctx context.Context, network, address string)
 // PeerAddr is normally a public IP address that's used for outbound connections
 type PeerAddr struct {
 	IP net.IP
+}
+
+func (addr *PeerAddr) Equal(other *PeerAddr) bool {
+	return addr.String() == other.String()
 }
 
 func (addr *PeerAddr) String() string {

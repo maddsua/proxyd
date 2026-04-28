@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/maddsua/proxyd/utils"
@@ -33,25 +34,38 @@ var DefaultDnsProbeNames = []string{
 	"icann.org",
 }
 
-type ProxyDNSResolver struct {
+type DNSAddr struct {
 	ServerAddr string
-	Dialer     net.Dialer
 }
 
-func (dns *ProxyDNSResolver) ServerName() string {
+func (addr *DNSAddr) Equal(other *DNSAddr) bool {
+	return addr.Addr() == other.Addr()
+}
 
-	addr := dns.ServerAddr
-	if host, _, err := net.SplitHostPort(addr); err == nil {
-		return host
-	} else if addr != "" {
-		return addr
+func (addr *DNSAddr) Addr() string {
+	if addr == nil {
+		return ""
 	}
+	return addr.ServerAddr
+}
 
+func (addr *DNSAddr) Name() string {
+	if val := addr.Addr(); val != "" {
+		if host, _, err := net.SplitHostPort(val); err == nil {
+			return host
+		}
+		return val
+	}
 	return "<default>"
 }
 
+type ProxyDNSResolver struct {
+	Server atomic.Pointer[DNSAddr]
+	Dialer net.Dialer
+}
+
 func (dns *ProxyDNSResolver) Resolver() *net.Resolver {
-	serverAddr, err := dnsServerAddr(dns.ServerAddr)
+	serverAddr, err := dnsServerAddr(dns.Server.Load().Addr())
 	if err != nil {
 		return net.DefaultResolver
 	}

@@ -47,7 +47,7 @@ type ProxySession struct {
 // Dials an address while checking that a peer is allowed to access the remote and wrapping resulting connection in a (proxyConnection)
 func (sess *ProxySession) DialDestinationContext(ctx context.Context, network, address string) (net.Conn, error) {
 
-	dstAddr, err := sess.DNS.ResolveDestination(ctx, sess.Dialer.OutboundAddr.Network(), address)
+	dstAddr, err := sess.DNS.ResolveDestination(ctx, sess.Dialer.OutboundAddr.Load().Network(), address)
 	if err != nil {
 		return nil, err
 	}

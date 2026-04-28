@@ -55,7 +55,7 @@ func ServeForward(wrt http.ResponseWriter, req *http.Request, sess *proxyd.Proxy
 		slog.String("peer_addr", req.RemoteAddr),
 		slog.String("peer_id", sess.PeerID),
 		slog.String("dst_host", req.URL.Host),
-		slog.String("dns", sess.DNS.ServerName()))
+		slog.String("dns", sess.DNS.Server.Load().Name()))
 
 	writeResponseHeaders(wrt, fwresp)
 
@@ -183,7 +183,7 @@ func (state *sessionForwardClient) Destroy() {
 
 func newSessionForwardClient(sess *proxyd.ProxySession) *sessionForwardClient {
 	return &sessionForwardClient{
-		peerAddr: sess.Dialer.OutboundAddr.String(),
+		peerAddr: sess.Dialer.OutboundAddr.Load().String(),
 		client: &http.Client{
 			Transport: &http.Transport{
 				DialContext:           sess.DialDestinationContext,

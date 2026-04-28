@@ -104,16 +104,13 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 
 	var sessionReset bool
 
-	wrantFramedIP, err := unwrapFramedIP(peer.FramedIP)
-	if err != nil {
+	if wrantFramedIP, err := unwrapFramedIP(peer.FramedIP); err != nil {
 		slog.Warn("RADIUS: New framed IP cannot be assigned",
 			slog.String("slot", state.slotID),
 			slog.String("peer", state.sess.PeerID),
 			slog.String("framed_ip", peer.FramedIP.String()),
 			slog.String("err", err.Error()))
-	}
-
-	if wrantFramedIP.String() != state.sess.Dialer.OutboundAddr.String() {
+	} else if !state.sess.Dialer.OutboundAddr.Load().Equal(wrantFramedIP) {
 
 		if !isInit {
 			slog.Info("RADIUS: Update framed IP",
@@ -122,34 +119,28 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 				slog.String("framed_ip", wrantFramedIP.String()))
 		}
 
-		state.sess.Dialer.OutboundAddr = wrantFramedIP
+		state.sess.Dialer.OutboundAddr.Store(wrantFramedIP)
 		sessionReset = true
 	}
 
-	if wantDns := unwrapDnsServerAddr(peer.DNSServer); state.sess.DNS.ServerAddr != wantDns {
+	if wantDns, err := unwrapDnsServerAddr(ctx, state.dnsTester, peer.DNSServer); err != nil {
+
+		slog.Warn("RADIUS: New DNS server unreachable",
+			slog.String("slot", state.slotID),
+			slog.String("peer", state.sess.PeerID),
+			slog.String("dns", peer.DNSServer.String()),
+			slog.String("err", err.Error()))
+
+	} else if !state.sess.DNS.Server.Load().Equal(wantDns) {
 
 		if !isInit {
 			slog.Info("RADIUS: Update DNS server",
 				slog.String("slot", state.slotID),
 				slog.String("peer", state.sess.PeerID),
-				slog.String("dns_server", wantDns))
+				slog.String("dns", wantDns.Addr()))
 		}
 
-		if state.dnsTester != nil && wantDns != "" {
-
-			if err := state.dnsTester.Test(ctx, wantDns); err != nil {
-
-				slog.Warn("RADIUS: Peer's DNS server unreachable. Default DNS server will be used",
-					slog.String("slot", state.slotID),
-					slog.String("peer", state.sess.PeerID),
-					slog.String("dns_server", wantDns),
-					slog.String("err", err.Error()))
-
-				wantDns = ""
-			}
-		}
-
-		state.sess.DNS.ServerAddr = wantDns
+		state.sess.DNS.Server.Store(wantDns)
 	}
 
 	if sessionReset {
@@ -267,9 +258,17 @@ func unwrapFramedIP(ip net.IP) (*proxyd.PeerAddr, error) {
 	return &proxyd.PeerAddr{IP: ip}, nil
 }
 
-func unwrapDnsServerAddr(addr net.IP) string {
-	if addr != nil {
-		return addr.String()
+func unwrapDnsServerAddr(ctx context.Context, dnsTester *proxyd.DNSTester, addr net.IP) (*proxyd.DNSAddr, error) {
+
+	if addr == nil {
+		return nil, nil
 	}
-	return ""
+
+	if dnsTester != nil {
+		if err := dnsTester.Test(ctx, addr.String()); err != nil {
+			return nil, err
+		}
+	}
+
+	return &proxyd.DNSAddr{ServerAddr: addr.String()}, nil
 }

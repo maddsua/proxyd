@@ -62,15 +62,15 @@ func ServeProxy(ctx context.Context, conn net.Conn, auth proxyd.ProxyAuthenticat
 
 func ServeConnect(ctx context.Context, conn net.Conn, sess *proxyd.ProxySession, wrt *ReplyWriter, req *Request) {
 
-	dstResolved, err := sess.DNS.ResolveDestination(ctx, sess.Dialer.OutboundAddr.Network(), req.DstAddr.String())
+	dstResolved, err := sess.DNS.ResolveDestination(ctx, sess.Dialer.OutboundAddr.Load().Network(), req.DstAddr.String())
 	if err != nil {
 
 		slog.Debug("SOCKSv5: ServeConnect: ResolveDestination",
 			slog.String("proxy_host", conn.LocalAddr().String()),
 			slog.String("client_addr", conn.RemoteAddr().String()),
 			slog.String("peer_id", sess.PeerID),
-			slog.String("peer_ip", sess.Dialer.OutboundAddr.String()),
-			slog.String("peer_dns", sess.DNS.ServerName()),
+			slog.String("peer_ip", sess.Dialer.OutboundAddr.Load().String()),
+			slog.String("peer_dns", sess.DNS.Server.Load().Addr()),
 			slog.String("dst_addr", req.DstAddr.String()),
 			slog.String("err", err.Error()))
 
@@ -106,7 +106,7 @@ func ServeConnect(ctx context.Context, conn net.Conn, sess *proxyd.ProxySession,
 			slog.String("client_addr", conn.RemoteAddr().String()),
 			slog.String("peer_id", sess.PeerID),
 			slog.String("dst_addr", dstResolved),
-			slog.String("dns", sess.DNS.ServerName()),
+			slog.String("dns", sess.DNS.Server.Load().Name()),
 			slog.String("err", err.Error()))
 
 		wrt.Reply(ReplyCodeConnectionRefused, nil)
@@ -130,7 +130,7 @@ func ServeConnect(ctx context.Context, conn net.Conn, sess *proxyd.ProxySession,
 		slog.String("peer_id", sess.PeerID),
 		slog.String("client_addr", conn.RemoteAddr().String()),
 		slog.String("dst_addr", dstResolved),
-		slog.String("dns", sess.DNS.ServerName()))
+		slog.String("dns", sess.DNS.Server.Load().Name()))
 
 	if err := utils.PipeDuplexContext(ctx, dstConn, conn); err != nil {
 		slog.Debug("SOCKSv5: ServeConnect: PipeDuplexContext",

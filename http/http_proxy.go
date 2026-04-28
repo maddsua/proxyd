@@ -298,15 +298,15 @@ func (handler *requestHandler) ServeHTTP(wrt http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	dstResolved, err := sess.DNS.ResolveDestination(req.Context(), sess.Dialer.OutboundAddr.Network(), dstAddr)
+	dstResolved, err := sess.DNS.ResolveDestination(req.Context(), sess.Dialer.OutboundAddr.Load().Network(), dstAddr)
 	if err != nil {
 
 		slog.Debug("HTTP: ServeHTTP: ResolveDestination",
 			slog.String("proxy_addr", req.Host),
 			slog.String("peer_addr", req.RemoteAddr),
 			slog.String("peer_id", sess.PeerID),
-			slog.String("peer_ip", sess.Dialer.OutboundAddr.String()),
-			slog.String("peer_dns", sess.DNS.ServerName()),
+			slog.String("peer_ip", sess.Dialer.OutboundAddr.Load().String()),
+			slog.String("peer_dns", sess.DNS.Server.Load().Name()),
 			slog.String("dst_addr", dstAddr),
 			slog.String("err", err.Error()))
 
