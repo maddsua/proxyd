@@ -66,7 +66,7 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, _ n
 
 	rlc.Val = 0
 
-	return &slot.ProxySession, nil
+	return &slot.sess, nil
 }
 
 func (auth *peerAuthenticator) Peers() []PeerStatus {
@@ -78,8 +78,8 @@ func (auth *peerAuthenticator) Peers() []PeerStatus {
 	for _, peer := range auth.peers {
 
 		next := PeerStatus{
-			ID:      peer.ProxySession.PeerID,
-			Enabled: peer.ProxySession.PeerEnabled,
+			ID:      peer.sess.PeerID,
+			Enabled: peer.sess.PeerEnabled,
 		}
 
 		if info := peer.UserInfo; info != nil {
@@ -102,7 +102,7 @@ func (auth *peerAuthenticator) RebalancePools() {
 	defer auth.mtx.Unlock()
 
 	for _, state := range auth.peers {
-		state.Pool.Rebalance()
+		state.sess.Pool.Rebalance()
 	}
 }
 
@@ -126,8 +126,8 @@ func (auth *peerAuthenticator) Deltas() []TrafficDelta {
 
 func (auth *peerAuthenticator) sumPeerDelta(peer *peerSlot) {
 
-	rx := peer.Pool.TrafficRx.Swap(0)
-	tx := peer.Pool.TrafficTx.Swap(0)
+	rx := peer.sess.Pool.TrafficRx.Swap(0)
+	tx := peer.sess.Pool.TrafficTx.Swap(0)
 
 	if rx == 0 && tx == 0 {
 		return
@@ -137,10 +137,11 @@ func (auth *peerAuthenticator) sumPeerDelta(peer *peerSlot) {
 		auth.deltaQueue = map[string]*TrafficDelta{}
 	}
 
-	delta := auth.deltaQueue[peer.PeerID]
+	peerID := peer.sess.PeerID
+	delta := auth.deltaQueue[peerID]
 	if delta == nil {
-		delta = &TrafficDelta{PeerID: peer.PeerID}
-		auth.deltaQueue[peer.PeerID] = delta
+		delta = &TrafficDelta{PeerID: peerID}
+		auth.deltaQueue[peerID] = delta
 	}
 
 	delta.RxBytes += rx
@@ -180,9 +181,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 		peer, peerExisted := auth.peers[entry.ID]
 		if peer == nil {
 			peer = &peerSlot{
-				ProxySession: proxyd.ProxySession{
-					PeerID: entry.ID,
-				},
+				sess: proxyd.ProxySession{PeerID: entry.ID},
 			}
 			auth.peers[entry.ID] = peer
 		}
@@ -201,7 +200,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 			sessionReset = true
 		}
 
-		if peer.PeerEnabled != entry.Enabled {
+		if peer.sess.PeerEnabled != entry.Enabled {
 
 			if peerExisted {
 				if entry.Enabled {
@@ -215,7 +214,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 				}
 			}
 
-			peer.PeerEnabled = entry.Enabled
+			peer.sess.PeerEnabled = entry.Enabled
 			sessionReset = true
 		}
 
@@ -227,7 +226,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 				slog.String("dns", entry.DNS),
 				slog.String("err", err.Error()))
 
-		} else if !peer.DNS.Server.Load().Equal(wantDNS) {
+		} else if !peer.sess.DNS.Server.Load().Equal(wantDNS) {
 
 			if peerExisted {
 				slog.Info("PeerAuthenticator: Update DNS server",
@@ -236,7 +235,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 					slog.String("dns", wantDNS.Name()))
 			}
 
-			peer.DNS.Server.Store(wantDNS)
+			peer.sess.DNS.Server.Store(wantDNS)
 		}
 
 		if wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr); err != nil {
@@ -247,7 +246,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 				slog.String("addr", entry.OutboundAddr),
 				slog.String("err", err.Error()))
 
-		} else if !peer.Dialer.OutboundAddr.Load().Equal(wantOutboundAddr) {
+		} else if !peer.sess.Dialer.OutboundAddr.Load().Equal(wantOutboundAddr) {
 
 			if peerExisted {
 				slog.Info("PeerAuthenticator: Update outbound address",
@@ -256,11 +255,11 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 					slog.String("addr", wantOutboundAddr.String()))
 			}
 
-			peer.Dialer.OutboundAddr.Store(wantOutboundAddr)
+			peer.sess.Dialer.OutboundAddr.Store(wantOutboundAddr)
 			sessionReset = true
 		}
 
-		if peer.Pool.ConnectionLimit() != entry.MaxConnections {
+		if peer.sess.Pool.ConnectionLimit() != entry.MaxConnections {
 
 			if peerExisted {
 				slog.Info("PeerAuthenticator: Update connection limit",
@@ -269,7 +268,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 					slog.Int("maxconn", entry.MaxConnections))
 			}
 
-			if err := peer.Pool.SetConnectionLimit(entry.MaxConnections); err != nil {
+			if err := peer.sess.Pool.SetConnectionLimit(entry.MaxConnections); err != nil {
 				slog.Error("PeerAuthenticator: Update connection limit",
 					slog.String("slot", auth.slotName),
 					slog.String("peer", peer.displayName()),
@@ -279,7 +278,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 		}
 
 		wantRx, wantTx := unwrapPeerBandwidth(entry.Bandwidth)
-		if haveRx, haveTx := peer.Pool.Bandwidth(); wantRx != haveRx || wantTx != haveTx {
+		if haveRx, haveTx := peer.sess.Pool.Bandwidth(); wantRx != haveRx || wantTx != haveTx {
 
 			if peerExisted {
 				slog.Info("PeerAuthenticator: Update bandwidth",
@@ -289,7 +288,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 					slog.Int64("tx_rate", wantTx))
 			}
 
-			peer.Pool.SetBandwidth(wantRx, wantTx)
+			peer.sess.Pool.SetBandwidth(wantRx, wantTx)
 		}
 
 		if peerExisted && sessionReset {
@@ -298,19 +297,19 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 				slog.String("slot", auth.slotName),
 				slog.String("peer", peer.displayName()))
 
-			peer.ProxySession.Reset()
+			peer.sess.Reset()
 		}
 
 		if !peerExisted {
 
-			rxMax, txMax := peer.Pool.Bandwidth()
+			rxMax, txMax := peer.sess.Pool.Bandwidth()
 
 			slog.Info("PeerAuthenticator: Add peer",
 				slog.String("slot", auth.slotName),
 				slog.String("peer", peer.displayName()),
-				slog.String("addr", peer.Dialer.OutboundAddr.Load().String()),
-				slog.String("dns", peer.DNS.Server.Load().Name()),
-				slog.Int("max_conn", peer.Pool.ConnectionLimit()),
+				slog.String("addr", peer.sess.Dialer.OutboundAddr.Load().String()),
+				slog.String("dns", peer.sess.DNS.Server.Load().Name()),
+				slog.Int("max_conn", peer.sess.Pool.ConnectionLimit()),
 				slog.Int64("rx_rate", rxMax),
 				slog.Int64("tx_rate", txMax))
 		}
@@ -321,9 +320,9 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 
 		slog.Info("PeerAuthenticator: Remove peer",
 			slog.String("slot", auth.slotName),
-			slog.String("peer_id", peer.PeerID))
+			slog.String("peer_id", peer.sess.PeerID))
 
-		peer.Reset()
+		peer.sess.Reset()
 		auth.sumPeerDelta(peer)
 
 		delete(auth.peers, key)
@@ -348,7 +347,7 @@ func (auth *peerAuthenticator) ResetPeers() {
 	}
 
 	for _, peer := range auth.peers {
-		peer.Reset()
+		peer.sess.Reset()
 		auth.sumPeerDelta(peer)
 	}
 
@@ -357,7 +356,7 @@ func (auth *peerAuthenticator) ResetPeers() {
 }
 
 type peerSlot struct {
-	proxyd.ProxySession
+	sess proxyd.ProxySession
 
 	UserInfo      *ProxyPeerUserInfo
 	AuthAttemptRL utils.ExpireMap[uint64]
@@ -367,7 +366,7 @@ func (slot *peerSlot) displayName() string {
 	if user := slot.UserInfo; user != nil {
 		return user.Username
 	}
-	return slot.ProxySession.PeerID
+	return slot.sess.PeerID
 }
 
 func unwrapPeerBandwidth(bw *ProxyPeerBandwidth) (rx, tx int64) {
