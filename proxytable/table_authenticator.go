@@ -35,6 +35,9 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, _ n
 
 	defer peer.mtx.Unlock()
 
+	// make sure any blocking updates are finished befure a session is returned
+	peer.wg.Wait()
+
 	maxAttempts, attemptWindow := peer.user.Options.RateLimiter()
 
 	rlc := peer.authRl.SetNoExist(clientIP.String(), 0, attemptWindow)
@@ -77,7 +80,6 @@ func (auth *peerAuthenticator) lookupPeer(username string) *peerSlot {
 	}
 
 	peer.mtx.Lock()
-	peer.wg.Wait()
 
 	return peer
 }
