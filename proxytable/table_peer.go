@@ -79,33 +79,13 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 		// that you're not blocking the whole authenticator
 		// while checking whether or not a provided server is valid
 
-		var applyResult = func(err error, logUpdate bool) {
-
-			if err != nil {
-				slog.Warn("PeerAuthenticator: DNS server cannot be set",
-					slog.String("slot", peer.parentName),
-					slog.String("peer", peer.displayName()),
-					slog.String("dns", entry.DNS),
-					slog.String("err", err.Error()))
-				return
-			}
-
-			if logUpdate {
-				slog.Info("PeerAuthenticator: Update DNS server",
-					slog.String("slot", peer.parentName),
-					slog.String("peer", peer.displayName()),
-					slog.String("dns", wantDNS.Name()))
-			}
-			peer.sess.DNS.Server.Store(wantDNS)
-		}
-
 		// check the cache first to speed up tests of frequently used servers,
 		// and only go poke at it if that is absolutely necessary
 
 		if wantDNS == nil {
-			applyResult(nil, peer.init)
+			peer.setDNS(nil, peer.init)
 		} else if err, valid := peer.dnsTester.LookupCached(wantDNS.Addr()); valid {
-			applyResult(err, peer.init)
+			peer.applyDNSUpdate(wantDNS, err, peer.init)
 		} else if peer.dnsLocked.CompareAndSwap(false, true) {
 
 			// an atomic bool acts as a guard here to make sure that
@@ -120,7 +100,7 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 			go func() {
 				defer peer.wg.Done()
 				defer peer.dnsLocked.Store(false)
-				applyResult(peer.dnsTester.Test(context.Background(), wantDNS.Addr()), logUpdate)
+				peer.applyDNSUpdate(wantDNS, peer.dnsTester.Test(context.Background(), wantDNS.Addr()), logUpdate)
 			}()
 
 			if peer.init {
@@ -209,6 +189,31 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 
 		peer.init = true
 	}
+}
+
+func (peer *peerSlot) applyDNSUpdate(wantDNS *proxyd.DNSAddr, err error, logUpdate bool) {
+
+	if err != nil {
+		slog.Warn("PeerAuthenticator: DNS server cannot be set",
+			slog.String("slot", peer.parentName),
+			slog.String("peer", peer.displayName()),
+			slog.String("dns", wantDNS.Addr()),
+			slog.String("err", err.Error()))
+		return
+	}
+
+	peer.setDNS(wantDNS, logUpdate)
+}
+
+func (peer *peerSlot) setDNS(wantDNS *proxyd.DNSAddr, logFlag bool) {
+
+	if logFlag {
+		slog.Info("PeerAuthenticator: Update DNS server",
+			slog.String("slot", peer.parentName),
+			slog.String("peer", peer.displayName()),
+			slog.String("dns", wantDNS.Name()))
+	}
+	peer.sess.DNS.Server.Store(wantDNS)
 }
 
 func unwrapPeerBandwidth(bw *ProxyPeerBandwidth) (rx, tx int64) {
