@@ -29,7 +29,7 @@ type peerSessionState struct {
 	mtx     sync.Mutex
 	expires time.Time
 
-	slotID           string
+	parentName       string
 	lastUserActivity time.Time
 	idleTimeout      time.Duration
 
@@ -79,7 +79,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 
 		if state.init {
 			slog.Info("RADIUS: Update connection limit",
-				slog.String("slot", state.slotID),
+				slog.String("slot", state.parentName),
 				slog.String("peer", state.sess.PeerID),
 				slog.Int("maxconn", peer.ConnectionLimit))
 		}
@@ -91,7 +91,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 
 		if state.init {
 			slog.Info("RADIUS: Update bandwidth",
-				slog.String("slot", state.slotID),
+				slog.String("slot", state.parentName),
 				slog.String("peer", state.sess.PeerID),
 				slog.Int64("rx", peer.MaxRxRate),
 				slog.Int64("tx", peer.MaxTxRate))
@@ -104,7 +104,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 
 	if wrantFramedIP, err := unwrapFramedIP(peer.FramedIP); err != nil {
 		slog.Warn("RADIUS: Framed IP cannot be set",
-			slog.String("slot", state.slotID),
+			slog.String("slot", state.parentName),
 			slog.String("peer", state.sess.PeerID),
 			slog.String("framed_ip", peer.FramedIP.String()),
 			slog.String("err", err.Error()))
@@ -112,7 +112,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 
 		if state.init {
 			slog.Info("RADIUS: Update framed IP",
-				slog.String("slot", state.slotID),
+				slog.String("slot", state.parentName),
 				slog.String("peer", state.sess.PeerID),
 				slog.String("framed_ip", wrantFramedIP.String()))
 		}
@@ -127,7 +127,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 			state.setDNS(wantDns)
 		} else if err := state.dnsTester.Test(ctx, wantDns.Addr()); err != nil {
 			slog.Warn("RADIUS: DNS server cannot be set",
-				slog.String("slot", state.slotID),
+				slog.String("slot", state.parentName),
 				slog.String("peer", state.sess.PeerID),
 				slog.String("dns", peer.DNSServer.String()),
 				slog.String("err", err.Error()))
@@ -140,7 +140,22 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 		state.sess.Reset()
 	}
 
-	state.init = true
+	if !state.init {
+
+		rxMax, txMax := state.sess.Pool.Bandwidth()
+
+		slog.Info("RADIUS: New session",
+			slog.String("slot", state.parentName),
+			slog.String("peer", state.sess.PeerID),
+			slog.String("acct_id", state.acctSid),
+			slog.String("addr", state.sess.Dialer.OutboundAddr.Load().String()),
+			slog.String("dns", state.sess.DNS.Server.Load().Name()),
+			slog.Int("max_conn", state.sess.Pool.ConnectionLimit()),
+			slog.Int64("rx_rate", rxMax),
+			slog.Int64("tx_rate", txMax))
+
+		state.init = true
+	}
 
 	state.account(ctx, false)
 
@@ -150,7 +165,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 func (state *peerSessionState) setDNS(wantDns *proxyd.DNSAddr) {
 	if state.init {
 		slog.Info("RADIUS: Update DNS server",
-			slog.String("slot", state.slotID),
+			slog.String("slot", state.parentName),
 			slog.String("peer", state.sess.PeerID),
 			slog.String("dns", wantDns.Name()))
 	}

@@ -3,7 +3,6 @@ package radiusmanager
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"sync"
@@ -90,7 +89,7 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, pro
 	state := peerSessionState{
 		params:           params,
 		lastUserActivity: time.Now(),
-		slotID:           fmt.Sprintf("%v", proxyHost),
+		parentName:       proxyHost.String(),
 		dnsTester:        &auth.dnsTester,
 		upstream:         &auth.Client,
 	}
@@ -102,7 +101,7 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, pro
 	entry.sess = &state
 
 	slog.Info("RADIUS: Authorize session",
-		slog.String("slot_id", state.slotID),
+		slog.String("slot_id", state.parentName),
 		slog.String("peer_id", state.sess.PeerID),
 		slog.String("client_ip", clientIP.String()))
 
@@ -252,7 +251,7 @@ func (auth *peerAuthenticator) reauthSessionState(ctx context.Context, entry *pe
 	if err := state.reauthenticate(ctx); err != nil {
 
 		slog.Debug("RADIUS: Session re-auth failed",
-			slog.String("slot_id", state.slotID),
+			slog.String("slot_id", state.parentName),
 			slog.String("peer_id", state.sess.PeerID),
 			slog.String("acct_sess", state.acctSid),
 			slog.String("err", err.Error()))
@@ -263,7 +262,7 @@ func (auth *peerAuthenticator) reauthSessionState(ctx context.Context, entry *pe
 	}
 
 	slog.Info("RADIUS: Re-authorized session",
-		slog.String("slot_id", state.slotID),
+		slog.String("slot_id", state.parentName),
 		slog.String("peer_id", state.sess.PeerID),
 		slog.String("acct_sess", state.acctSid))
 
@@ -278,7 +277,7 @@ func (auth *peerAuthenticator) expireSessionState(ctx context.Context, entry *pe
 	}
 
 	slog.Debug("RADIUS: Session expired",
-		slog.String("slot_id", state.slotID),
+		slog.String("slot_id", state.parentName),
 		slog.String("peer_id", state.sess.PeerID),
 		slog.String("acct_sess", state.acctSid))
 
@@ -313,7 +312,7 @@ func (auth *peerAuthenticator) DisconnectSession(ctx context.Context, acctSid st
 	}
 
 	slog.Debug("RADIUS: Forcing client disconnect",
-		slog.String("slot_id", state.slotID),
+		slog.String("slot_id", state.parentName),
 		slog.String("peer_id", state.sess.PeerID))
 
 	auth.removeIndexEntry(state.params.Hash())
@@ -330,7 +329,7 @@ func (auth *peerAuthenticator) ChangeSessionAuthority(ctx context.Context, peer 
 	}
 
 	slog.Debug("RADIUS: Changing client authority",
-		slog.String("slot_id", state.slotID),
+		slog.String("slot_id", state.parentName),
 		slog.String("peer_id", state.sess.PeerID))
 
 	return state.Refresh(ctx, peer)
