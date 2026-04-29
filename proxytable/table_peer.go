@@ -120,6 +120,13 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 				defer peer.dnsLocked.Store(false)
 				applyResult(peer.dnsTester.Test(context.Background(), wantDNS.Addr()))
 			}()
+
+			if peer.init {
+				slog.Debug("PeerAuthenticator: Deferred DNS server test",
+					slog.String("slot", peer.parentName),
+					slog.String("peer", peer.displayName()),
+					slog.String("dns", wantDNS.Name()))
+			}
 		}
 	}
 
