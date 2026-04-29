@@ -264,7 +264,22 @@ func (auth *peerAuthenticator) refreshPeer(entry ProxyTablePeerEntry) {
 
 	if wantDNS := parseDnsServerAddr(entry.DNS); !peer.sess.DNS.Server.Load().Equal(wantDNS) {
 
-		var setValue = func() {
+		// the dns update is a bit complicated here,
+		// but it basically boils down to making sure
+		// that you're not blocking the whole authenticator
+		// while checking whether or not a provided server is valid
+
+		var applyResult = func(err error) {
+
+			if err != nil {
+				slog.Warn("PeerAuthenticator: DNS server cannot be assigned",
+					slog.String("slot", auth.slotName),
+					slog.String("peer", peer.displayName()),
+					slog.String("dns", entry.DNS),
+					slog.String("err", err.Error()))
+				return
+			}
+
 			if peerExisted {
 				slog.Info("PeerAuthenticator: Update DNS server",
 					slog.String("slot", auth.slotName),
@@ -274,42 +289,25 @@ func (auth *peerAuthenticator) refreshPeer(entry ProxyTablePeerEntry) {
 			peer.sess.DNS.Server.Store(wantDNS)
 		}
 
-		// the dns update is a bit complicated here,
-		// but it basically boils down to making sure
-		// that you're not blocking the whole authenticator
-		// while checking whether or not a provided server is valid
+		// check the cache first to speed up tests of frequently used servers,
+		// and only go poke at it if that is absolutely necessary
 
-		if tester := auth.dnsTester; tester != nil {
+		if err, valid := auth.dnsTester.LookupCached(wantDNS.Addr()); valid {
+			applyResult(err)
+		} else if peer.dnsLocked.CompareAndSwap(false, true) {
 
 			// an atomic bool acts as a guard here to make sure that
 			// the subsequent refresh calls don't create a logic race,
 			// where the same DNS server is checked by multiple routines in parallel.
 			// this, however can cause the DNS to lag behind until the next update cycle
 
-			if peer.dnsLocked.CompareAndSwap(false, true) {
+			peer.wg.Add(1)
 
-				peer.wg.Add(1)
-
-				go func() {
-
-					defer peer.wg.Done()
-					defer peer.dnsLocked.Store(false)
-
-					if err := tester.Test(context.Background(), wantDNS.Addr()); err != nil {
-						slog.Warn("PeerAuthenticator: DNS server cannot be assigned",
-							slog.String("slot", auth.slotName),
-							slog.String("peer", peer.displayName()),
-							slog.String("dns", entry.DNS),
-							slog.String("err", err.Error()))
-						return
-					}
-
-					setValue()
-				}()
-			}
-
-		} else {
-			setValue()
+			go func() {
+				defer peer.wg.Done()
+				defer peer.dnsLocked.Store(false)
+				applyResult(auth.dnsTester.Test(context.Background(), wantDNS.Addr()))
+			}()
 		}
 	}
 

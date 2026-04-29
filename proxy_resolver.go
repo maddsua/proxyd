@@ -200,6 +200,13 @@ type DNSTester struct {
 	entries utils.ExpireMap[error]
 }
 
+func (dt *DNSTester) LookupCached(addr string) (error, bool) {
+	if entry := dt.entries.Get(addr); entry != nil {
+		return entry.Val, true
+	}
+	return nil, false
+}
+
 func (dt *DNSTester) Test(ctx context.Context, addr string) error {
 
 	ttl := dt.ResultTTL
