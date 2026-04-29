@@ -102,7 +102,9 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 		// check the cache first to speed up tests of frequently used servers,
 		// and only go poke at it if that is absolutely necessary
 
-		if err, valid := peer.dnsTester.LookupCached(wantDNS.Addr()); valid {
+		if wantDNS == nil {
+			applyResult(nil)
+		} else if err, valid := peer.dnsTester.LookupCached(wantDNS.Addr()); valid {
 			applyResult(err)
 		} else if peer.dnsLocked.CompareAndSwap(false, true) {
 

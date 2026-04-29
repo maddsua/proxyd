@@ -123,7 +123,9 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 
 	if wantDns := unwrapDnsServerAddr(peer.DNSServer); !state.sess.DNS.Server.Load().Equal(wantDns) {
 
-		if err := state.dnsTester.Test(ctx, wantDns.Addr()); err != nil {
+		if wantDns == nil {
+			state.sess.DNS.Server.Store(nil)
+		} else if err := state.dnsTester.Test(ctx, wantDns.Addr()); err != nil {
 			slog.Warn("RADIUS: DNS server cannot be assigned",
 				slog.String("slot", state.slotID),
 				slog.String("peer", state.sess.PeerID),
@@ -258,7 +260,7 @@ func unwrapFramedIP(ip net.IP) (*proxyd.PeerAddr, error) {
 }
 
 func unwrapDnsServerAddr(addr net.IP) *proxyd.DNSAddr {
-	if addr == nil {
+	if addr != nil {
 		return &proxyd.DNSAddr{ServerAddr: addr.String()}
 	}
 	return nil
