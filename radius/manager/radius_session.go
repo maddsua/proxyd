@@ -24,7 +24,7 @@ type peerSessionState struct {
 	params radius_pkg.PeerCredentials
 	sess   proxyd.ProxySession
 
-	init    atomic.Bool
+	init    bool
 	done    atomic.Bool
 	mtx     sync.Mutex
 	expires time.Time
@@ -69,8 +69,6 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 		state.sess.PeerEnabled = true
 	}
 
-	isInit := state.init.CompareAndSwap(false, true)
-
 	state.acctSid = peer.AcctSessionID
 	state.acctUid = peer.ChargeableUserID
 
@@ -79,7 +77,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 
 	if state.sess.Pool.ConnectionLimit() != peer.ConnectionLimit {
 
-		if !isInit {
+		if state.init {
 			slog.Info("RADIUS: Update connection limit",
 				slog.String("slot", state.slotID),
 				slog.String("peer", state.sess.PeerID),
@@ -91,7 +89,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 
 	if rxRate, txRate := state.sess.Pool.Bandwidth(); rxRate != peer.MaxRxRate || txRate != peer.MaxTxRate {
 
-		if !isInit {
+		if state.init {
 			slog.Info("RADIUS: Update bandwidth",
 				slog.String("slot", state.slotID),
 				slog.String("peer", state.sess.PeerID),
@@ -112,7 +110,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 			slog.String("err", err.Error()))
 	} else if !state.sess.Dialer.OutboundAddr.Load().Equal(wrantFramedIP) {
 
-		if !isInit {
+		if state.init {
 			slog.Info("RADIUS: Update framed IP",
 				slog.String("slot", state.slotID),
 				slog.String("peer", state.sess.PeerID),
@@ -132,7 +130,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 				slog.String("dns", peer.DNSServer.String()),
 				slog.String("err", err.Error()))
 		} else {
-			if !isInit {
+			if state.init {
 				slog.Info("RADIUS: Update DNS server",
 					slog.String("slot", state.slotID),
 					slog.String("peer", state.sess.PeerID),
@@ -145,6 +143,8 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 	if sessionReset {
 		state.sess.Reset()
 	}
+
+	state.init = true
 
 	state.account(ctx, false)
 
