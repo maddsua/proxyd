@@ -70,7 +70,7 @@ func ServeConnect(ctx context.Context, conn net.Conn, sess *proxyd.ProxySession,
 			slog.String("client_addr", conn.RemoteAddr().String()),
 			slog.String("peer_id", sess.PeerID),
 			slog.String("peer_ip", sess.Dialer.OutboundAddr.Load().String()),
-			slog.String("peer_dns", sess.DNS.Server.Load().Addr()),
+			slog.String("peer_dns", sess.DNS.Server.Load().Name()),
 			slog.String("dst_addr", req.DstAddr.String()),
 			slog.String("err", err.Error()))
 

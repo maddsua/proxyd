@@ -137,7 +137,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 			slog.Info("RADIUS: Update DNS server",
 				slog.String("slot", state.slotID),
 				slog.String("peer", state.sess.PeerID),
-				slog.String("dns", wantDns.Addr()))
+				slog.String("dns", wantDns.Name()))
 		}
 
 		state.sess.DNS.Server.Store(wantDns)

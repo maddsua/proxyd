@@ -51,9 +51,6 @@ func (addr *DNSAddr) Addr() string {
 
 func (addr *DNSAddr) Name() string {
 	if val := addr.Addr(); val != "" {
-		if host, _, err := net.SplitHostPort(val); err == nil {
-			return host
-		}
 		return val
 	}
 	return "<default>"

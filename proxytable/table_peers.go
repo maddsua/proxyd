@@ -226,7 +226,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 				slog.Info("PeerAuthenticator: Update DNS server",
 					slog.String("slot", auth.slotName),
 					slog.String("peer", peer.displayName()),
-					slog.String("dns", wantDNS.Addr()))
+					slog.String("dns", wantDNS.Name()))
 			}
 
 			peer.DNS.Server.Store(wantDNS)
