@@ -82,7 +82,7 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 		var applyResult = func(err error, logUpdate bool) {
 
 			if err != nil {
-				slog.Warn("PeerAuthenticator: DNS server cannot be assigned",
+				slog.Warn("PeerAuthenticator: DNS server cannot be set",
 					slog.String("slot", peer.parentName),
 					slog.String("peer", peer.displayName()),
 					slog.String("dns", entry.DNS),
@@ -134,7 +134,7 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 
 	if wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr); err != nil {
 
-		slog.Warn("PeerAuthenticator: Outbound IP cannot be assigned",
+		slog.Warn("PeerAuthenticator: Outbound IP cannot be set",
 			slog.String("slot", peer.parentName),
 			slog.String("peer", peer.displayName()),
 			slog.String("addr", entry.OutboundAddr),
