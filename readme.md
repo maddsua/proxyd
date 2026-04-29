@@ -64,7 +64,7 @@ manager:
       http_forward_enabled: true
 ```
 
-Refer to the [RADIUS section](./radius.md) to learn more about autorizing users and the attributes used.
+Refer to the [RADIUS section](./radius.md) to learn more about authorizing users and the attributes used.
 
 #### proxytables
 
