@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/maddsua/proxyd"
 	"github.com/maddsua/proxyd/utils"
@@ -159,10 +160,16 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 		maps.Copy(staleMap, auth.peers)
 	}
 
+	var invalidIdReported atomic.Bool
+
 	// iterate over a new table and update peers
 	for _, entry := range peerList {
 
 		if entry.ID == "" {
+			if invalidIdReported.CompareAndSwap(false, true) {
+				slog.Warn("PeerAuthenticator: Encountered invalid peer IDs",
+					slog.String("slot", auth.slotName))
+			}
 			continue
 		}
 
