@@ -124,7 +124,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 	if wantDns := unwrapDnsServerAddr(peer.DNSServer); !state.sess.DNS.Server.Load().Equal(wantDns) {
 
 		if wantDns == nil {
-			state.sess.DNS.Server.Store(nil)
+			state.setDNS(wantDns)
 		} else if err := state.dnsTester.Test(ctx, wantDns.Addr()); err != nil {
 			slog.Warn("RADIUS: DNS server cannot be assigned",
 				slog.String("slot", state.slotID),
@@ -132,13 +132,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 				slog.String("dns", peer.DNSServer.String()),
 				slog.String("err", err.Error()))
 		} else {
-			if state.init {
-				slog.Info("RADIUS: Update DNS server",
-					slog.String("slot", state.slotID),
-					slog.String("peer", state.sess.PeerID),
-					slog.String("dns", wantDns.Name()))
-			}
-			state.sess.DNS.Server.Store(wantDns)
+			state.setDNS(wantDns)
 		}
 	}
 
@@ -151,6 +145,16 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 	state.account(ctx, false)
 
 	return nil
+}
+
+func (state *peerSessionState) setDNS(wantDns *proxyd.DNSAddr) {
+	if state.init {
+		slog.Info("RADIUS: Update DNS server",
+			slog.String("slot", state.slotID),
+			slog.String("peer", state.sess.PeerID),
+			slog.String("dns", wantDns.Name()))
+	}
+	state.sess.DNS.Server.Store(wantDns)
 }
 
 func (state *peerSessionState) account(ctx context.Context, syncFlag bool) {
