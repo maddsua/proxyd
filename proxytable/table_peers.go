@@ -262,7 +262,7 @@ func (auth *peerAuthenticator) refreshPeer(entry ProxyTablePeerEntry) {
 		sessionReset = true
 	}
 
-	if wantDNS := parseDnsServerAddr(entry.DNS); !peer.sess.DNS.Server.Load().Equal(wantDNS) {
+	if wantDNS := unwrapDnsServerAddr(entry.DNS); !peer.sess.DNS.Server.Load().Equal(wantDNS) {
 
 		// the dns update is a bit complicated here,
 		// but it basically boils down to making sure
@@ -449,7 +449,7 @@ func unwrapPeerOutboundIP(addr string) (*proxyd.PeerAddr, error) {
 	return &proxyd.PeerAddr{IP: ip}, nil
 }
 
-func parseDnsServerAddr(addr string) *proxyd.DNSAddr {
+func unwrapDnsServerAddr(addr string) *proxyd.DNSAddr {
 	if addr != "" {
 		return &proxyd.DNSAddr{ServerAddr: addr}
 	}

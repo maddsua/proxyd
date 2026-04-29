@@ -123,24 +123,23 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 		sessionReset = true
 	}
 
-	if wantDns, err := unwrapDnsServerAddr(ctx, state.dnsTester, peer.DNSServer); err != nil {
+	if wantDns := unwrapDnsServerAddr(peer.DNSServer); !state.sess.DNS.Server.Load().Equal(wantDns) {
 
-		slog.Warn("RADIUS: DNS server cannot be assigned",
-			slog.String("slot", state.slotID),
-			slog.String("peer", state.sess.PeerID),
-			slog.String("dns", peer.DNSServer.String()),
-			slog.String("err", err.Error()))
-
-	} else if !state.sess.DNS.Server.Load().Equal(wantDns) {
-
-		if !isInit {
-			slog.Info("RADIUS: Update DNS server",
+		if err := state.dnsTester.Test(ctx, wantDns.Addr()); err != nil {
+			slog.Warn("RADIUS: DNS server cannot be assigned",
 				slog.String("slot", state.slotID),
 				slog.String("peer", state.sess.PeerID),
-				slog.String("dns", wantDns.Name()))
+				slog.String("dns", peer.DNSServer.String()),
+				slog.String("err", err.Error()))
+		} else {
+			if !isInit {
+				slog.Info("RADIUS: Update DNS server",
+					slog.String("slot", state.slotID),
+					slog.String("peer", state.sess.PeerID),
+					slog.String("dns", wantDns.Name()))
+			}
+			state.sess.DNS.Server.Store(wantDns)
 		}
-
-		state.sess.DNS.Server.Store(wantDns)
 	}
 
 	if sessionReset {
@@ -258,17 +257,9 @@ func unwrapFramedIP(ip net.IP) (*proxyd.PeerAddr, error) {
 	return &proxyd.PeerAddr{IP: ip}, nil
 }
 
-func unwrapDnsServerAddr(ctx context.Context, dnsTester *proxyd.DNSTester, addr net.IP) (*proxyd.DNSAddr, error) {
-
+func unwrapDnsServerAddr(addr net.IP) *proxyd.DNSAddr {
 	if addr == nil {
-		return nil, nil
+		return &proxyd.DNSAddr{ServerAddr: addr.String()}
 	}
-
-	if dnsTester != nil {
-		if err := dnsTester.Test(ctx, addr.String()); err != nil {
-			return nil, err
-		}
-	}
-
-	return &proxyd.DNSAddr{ServerAddr: addr.String()}, nil
+	return nil
 }
