@@ -42,9 +42,9 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, _ n
 		return nil, &proxyd.ProxyCredentialsError{}
 	}
 
-	maxAttempts, attemptWindow := slot.UserInfo.Options.RateLimiter()
+	maxAttempts, attemptWindow := slot.user.Options.RateLimiter()
 
-	rlc := slot.AuthAttemptRL.SetNoExist(clientIP.String(), 0, attemptWindow)
+	rlc := slot.authRl.SetNoExist(clientIP.String(), 0, attemptWindow)
 
 	// deny any access if rate limited
 	if rlc.Val >= uint64(maxAttempts) {
@@ -55,7 +55,7 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, _ n
 		return nil, &proxyd.ProxyCredentialsError{Username: username, RetryAfter: rlc.Expires}
 	}
 
-	if subtle.ConstantTimeCompare([]byte(slot.UserInfo.Password), []byte(password)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(slot.user.Password), []byte(password)) != 1 {
 
 		// increase attempt count and update couter expiration
 		rlc.Val++
@@ -82,7 +82,7 @@ func (auth *peerAuthenticator) Peers() []PeerStatus {
 			Enabled: peer.sess.PeerEnabled,
 		}
 
-		if info := peer.UserInfo; info != nil {
+		if info := peer.user; info != nil {
 			next.Username = info.Username
 		}
 
@@ -186,7 +186,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 			auth.peers[entry.ID] = peer
 		}
 
-		if unwrapUserInfo(peer.UserInfo) != unwrapUserInfo(entry.Userinfo) {
+		if unwrapUserInfo(peer.user) != unwrapUserInfo(entry.Userinfo) {
 
 			if peerExisted {
 				slog.Info("PeerAuthenticator: Update credentials",
@@ -194,8 +194,8 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 					slog.String("peer", peer.displayName()))
 			}
 
-			peer.UserInfo = entry.Userinfo
-			peer.AuthAttemptRL.Clear()
+			peer.user = entry.Userinfo
+			peer.authRl.Clear()
 
 			sessionReset = true
 		}
@@ -218,24 +218,42 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 			sessionReset = true
 		}
 
-		if wantDNS, err := unwrapDnsServerAddr(ctx, auth.dnsTester, entry.DNS); err != nil {
+		if wantDNS := parseDnsServerAddr(entry.DNS); !peer.sess.DNS.Server.Load().Equal(wantDNS) {
 
-			slog.Warn("PeerAuthenticator: DNS server cannot be assigned",
-				slog.String("slot", auth.slotName),
-				slog.String("peer", peer.displayName()),
-				slog.String("dns", entry.DNS),
-				slog.String("err", err.Error()))
-
-		} else if !peer.sess.DNS.Server.Load().Equal(wantDNS) {
-
-			if peerExisted {
-				slog.Info("PeerAuthenticator: Update DNS server",
-					slog.String("slot", auth.slotName),
-					slog.String("peer", peer.displayName()),
-					slog.String("dns", wantDNS.Name()))
+			var setValue = func() {
+				if peerExisted {
+					slog.Info("PeerAuthenticator: Update DNS server",
+						slog.String("slot", auth.slotName),
+						slog.String("peer", peer.displayName()),
+						slog.String("dns", wantDNS.Name()))
+				}
+				peer.sess.DNS.Server.Store(wantDNS)
 			}
 
-			peer.sess.DNS.Server.Store(wantDNS)
+			if tester := auth.dnsTester; tester != nil {
+
+				if peer.dnsLocked.CompareAndSwap(false, true) {
+
+					go func() {
+
+						defer peer.dnsLocked.Store(false)
+
+						if err := tester.Test(context.Background(), wantDNS.Addr()); err != nil {
+							slog.Warn("PeerAuthenticator: DNS server cannot be assigned",
+								slog.String("slot", auth.slotName),
+								slog.String("peer", peer.displayName()),
+								slog.String("dns", entry.DNS),
+								slog.String("err", err.Error()))
+							return
+						}
+
+						setValue()
+					}()
+				}
+
+			} else {
+				setValue()
+			}
 		}
 
 		if wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr); err != nil {
@@ -331,7 +349,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 	// recreate username map
 	auth.users = map[string]*peerSlot{}
 	for _, peer := range auth.peers {
-		if info := peer.UserInfo; info != nil && info.Username != "" {
+		if info := peer.user; info != nil && info.Username != "" {
 			auth.users[info.Username] = peer
 		}
 	}
@@ -356,14 +374,14 @@ func (auth *peerAuthenticator) ResetPeers() {
 }
 
 type peerSlot struct {
-	sess proxyd.ProxySession
-
-	UserInfo      *ProxyPeerUserInfo
-	AuthAttemptRL utils.ExpireMap[uint64]
+	user      *ProxyPeerUserInfo
+	authRl    utils.ExpireMap[uint64]
+	sess      proxyd.ProxySession
+	dnsLocked atomic.Bool
 }
 
 func (slot *peerSlot) displayName() string {
-	if user := slot.UserInfo; user != nil {
+	if user := slot.user; user != nil {
 		return user.Username
 	}
 	return slot.sess.PeerID
@@ -396,19 +414,11 @@ func unwrapPeerOutboundIP(addr string) (*proxyd.PeerAddr, error) {
 	return &proxyd.PeerAddr{IP: ip}, nil
 }
 
-func unwrapDnsServerAddr(ctx context.Context, dnsTester *proxyd.DNSTester, addr string) (*proxyd.DNSAddr, error) {
-
-	if addr == "" {
-		return nil, nil
+func parseDnsServerAddr(addr string) *proxyd.DNSAddr {
+	if addr != "" {
+		return &proxyd.DNSAddr{ServerAddr: addr}
 	}
-
-	if dnsTester != nil {
-		if err := dnsTester.Test(ctx, addr); err != nil {
-			return nil, err
-		}
-	}
-
-	return &proxyd.DNSAddr{ServerAddr: addr}, nil
+	return nil
 }
 
 func unwrapUserInfo(userinfo *ProxyPeerUserInfo) string {
