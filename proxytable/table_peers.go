@@ -30,21 +30,16 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, _ n
 		return nil, err
 	}
 
-	auth.mtx.Lock()
-	defer auth.mtx.Unlock()
-
-	if auth.users == nil {
+	peer := auth.lookupPeer(username)
+	if peer == nil {
 		return nil, &proxyd.ProxyCredentialsError{}
 	}
 
-	slot := auth.users[username]
-	if slot == nil {
-		return nil, &proxyd.ProxyCredentialsError{}
-	}
+	defer peer.mtx.Unlock()
 
-	maxAttempts, attemptWindow := slot.user.Options.RateLimiter()
+	maxAttempts, attemptWindow := peer.user.Options.RateLimiter()
 
-	rlc := slot.authRl.SetNoExist(clientIP.String(), 0, attemptWindow)
+	rlc := peer.authRl.SetNoExist(clientIP.String(), 0, attemptWindow)
 
 	// deny any access if rate limited
 	if rlc.Val >= uint64(maxAttempts) {
@@ -55,7 +50,7 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, _ n
 		return nil, &proxyd.ProxyCredentialsError{Username: username, RetryAfter: rlc.Expires}
 	}
 
-	if subtle.ConstantTimeCompare([]byte(slot.user.Password), []byte(password)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(peer.user.Password), []byte(password)) != 1 {
 
 		// increase attempt count and update couter expiration
 		rlc.Val++
@@ -66,7 +61,27 @@ func (auth *peerAuthenticator) AuthenticateWithPassword(ctx context.Context, _ n
 
 	rlc.Val = 0
 
-	return &slot.sess, nil
+	return &peer.sess, nil
+}
+
+func (auth *peerAuthenticator) lookupPeer(username string) *peerSlot {
+
+	auth.mtx.Lock()
+	defer auth.mtx.Unlock()
+
+	if auth.users == nil {
+		return nil
+	}
+
+	peer := auth.users[username]
+	if peer == nil {
+		return nil
+	}
+
+	peer.mtx.Lock()
+	peer.wg.Wait()
+
+	return peer
 }
 
 func (auth *peerAuthenticator) Peers() []PeerStatus {
@@ -153,7 +168,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 	auth.mtx.Lock()
 	defer auth.mtx.Unlock()
 
-	// prepare remove-list
+	// enumerate existing peers
 	staleMap := map[string]*peerSlot{}
 	if auth.peers == nil {
 		auth.peers = map[string]*peerSlot{}
@@ -163,7 +178,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 
 	var invalidIdReported atomic.Bool
 
-	// iterate over a new table and update peers
+	// go over a new peer list and create new peers or update existing
 	for _, entry := range peerList {
 
 		if entry.ID == "" {
@@ -175,165 +190,10 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 		}
 
 		delete(staleMap, entry.ID)
-
-		var sessionReset bool
-
-		peer, peerExisted := auth.peers[entry.ID]
-		if peer == nil {
-			peer = &peerSlot{
-				sess: proxyd.ProxySession{PeerID: entry.ID},
-			}
-			auth.peers[entry.ID] = peer
-		}
-
-		if unwrapUserInfo(peer.user) != unwrapUserInfo(entry.Userinfo) {
-
-			if peerExisted {
-				slog.Info("PeerAuthenticator: Update credentials",
-					slog.String("slot", auth.slotName),
-					slog.String("peer", peer.displayName()))
-			}
-
-			peer.user = entry.Userinfo
-			peer.authRl.Clear()
-
-			sessionReset = true
-		}
-
-		if peer.sess.PeerEnabled != entry.Enabled {
-
-			if peerExisted {
-				if entry.Enabled {
-					slog.Info("PeerAuthenticator: Enable peer",
-						slog.String("slot", auth.slotName),
-						slog.String("peer", peer.displayName()))
-				} else {
-					slog.Info("PeerAuthenticator: Disable peer",
-						slog.String("slot", auth.slotName),
-						slog.String("peer", peer.displayName()))
-				}
-			}
-
-			peer.sess.PeerEnabled = entry.Enabled
-			sessionReset = true
-		}
-
-		if wantDNS := parseDnsServerAddr(entry.DNS); !peer.sess.DNS.Server.Load().Equal(wantDNS) {
-
-			var setValue = func() {
-				if peerExisted {
-					slog.Info("PeerAuthenticator: Update DNS server",
-						slog.String("slot", auth.slotName),
-						slog.String("peer", peer.displayName()),
-						slog.String("dns", wantDNS.Name()))
-				}
-				peer.sess.DNS.Server.Store(wantDNS)
-			}
-
-			if tester := auth.dnsTester; tester != nil {
-
-				if peer.dnsLocked.CompareAndSwap(false, true) {
-
-					go func() {
-
-						defer peer.dnsLocked.Store(false)
-
-						if err := tester.Test(context.Background(), wantDNS.Addr()); err != nil {
-							slog.Warn("PeerAuthenticator: DNS server cannot be assigned",
-								slog.String("slot", auth.slotName),
-								slog.String("peer", peer.displayName()),
-								slog.String("dns", entry.DNS),
-								slog.String("err", err.Error()))
-							return
-						}
-
-						setValue()
-					}()
-				}
-
-			} else {
-				setValue()
-			}
-		}
-
-		if wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr); err != nil {
-
-			slog.Warn("PeerAuthenticator: Outbound IP cannot be assigned",
-				slog.String("slot", auth.slotName),
-				slog.String("peer", peer.displayName()),
-				slog.String("addr", entry.OutboundAddr),
-				slog.String("err", err.Error()))
-
-		} else if !peer.sess.Dialer.OutboundAddr.Load().Equal(wantOutboundAddr) {
-
-			if peerExisted {
-				slog.Info("PeerAuthenticator: Update outbound address",
-					slog.String("slot", auth.slotName),
-					slog.String("peer", peer.displayName()),
-					slog.String("addr", wantOutboundAddr.String()))
-			}
-
-			peer.sess.Dialer.OutboundAddr.Store(wantOutboundAddr)
-			sessionReset = true
-		}
-
-		if peer.sess.Pool.ConnectionLimit() != entry.MaxConnections {
-
-			if peerExisted {
-				slog.Info("PeerAuthenticator: Update connection limit",
-					slog.String("slot", auth.slotName),
-					slog.String("peer", peer.displayName()),
-					slog.Int("maxconn", entry.MaxConnections))
-			}
-
-			if err := peer.sess.Pool.SetConnectionLimit(entry.MaxConnections); err != nil {
-				slog.Error("PeerAuthenticator: Update connection limit",
-					slog.String("slot", auth.slotName),
-					slog.String("peer", peer.displayName()),
-					slog.Int("maxconn", entry.MaxConnections),
-					slog.String("err", err.Error()))
-			}
-		}
-
-		wantRx, wantTx := unwrapPeerBandwidth(entry.Bandwidth)
-		if haveRx, haveTx := peer.sess.Pool.Bandwidth(); wantRx != haveRx || wantTx != haveTx {
-
-			if peerExisted {
-				slog.Info("PeerAuthenticator: Update bandwidth",
-					slog.String("slot", auth.slotName),
-					slog.String("peer", peer.displayName()),
-					slog.Int64("rx_rate", wantRx),
-					slog.Int64("tx_rate", wantTx))
-			}
-
-			peer.sess.Pool.SetBandwidth(wantRx, wantTx)
-		}
-
-		if peerExisted && sessionReset {
-
-			slog.Debug("PeerAuthenticator: Forcing re-auth",
-				slog.String("slot", auth.slotName),
-				slog.String("peer", peer.displayName()))
-
-			peer.sess.Reset()
-		}
-
-		if !peerExisted {
-
-			rxMax, txMax := peer.sess.Pool.Bandwidth()
-
-			slog.Info("PeerAuthenticator: Add peer",
-				slog.String("slot", auth.slotName),
-				slog.String("peer", peer.displayName()),
-				slog.String("addr", peer.sess.Dialer.OutboundAddr.Load().String()),
-				slog.String("dns", peer.sess.DNS.Server.Load().Name()),
-				slog.Int("max_conn", peer.sess.Pool.ConnectionLimit()),
-				slog.Int64("rx_rate", rxMax),
-				slog.Int64("tx_rate", txMax))
-		}
+		auth.refreshPeer(entry)
 	}
 
-	// remove outdated peers
+	// purge peers that aren't present in the new list
 	for key, peer := range staleMap {
 
 		slog.Info("PeerAuthenticator: Remove peer",
@@ -346,12 +206,187 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 		delete(auth.peers, key)
 	}
 
-	// recreate username map
+	// recreate username index
 	auth.users = map[string]*peerSlot{}
 	for _, peer := range auth.peers {
 		if info := peer.user; info != nil && info.Username != "" {
 			auth.users[info.Username] = peer
 		}
+	}
+}
+
+func (auth *peerAuthenticator) refreshPeer(entry ProxyTablePeerEntry) {
+
+	var sessionReset bool
+
+	peer, peerExisted := auth.peers[entry.ID]
+	if peer == nil {
+		peer = &peerSlot{
+			sess: proxyd.ProxySession{PeerID: entry.ID},
+		}
+		auth.peers[entry.ID] = peer
+	}
+
+	peer.mtx.Lock()
+	defer peer.mtx.Unlock()
+
+	if unwrapUserInfo(peer.user) != unwrapUserInfo(entry.Userinfo) {
+
+		if peerExisted {
+			slog.Info("PeerAuthenticator: Update credentials",
+				slog.String("slot", auth.slotName),
+				slog.String("peer", peer.displayName()))
+		}
+
+		peer.user = entry.Userinfo
+		peer.authRl.Clear()
+
+		sessionReset = true
+	}
+
+	if peer.sess.PeerEnabled != entry.Enabled {
+
+		if peerExisted {
+			if entry.Enabled {
+				slog.Info("PeerAuthenticator: Enable peer",
+					slog.String("slot", auth.slotName),
+					slog.String("peer", peer.displayName()))
+			} else {
+				slog.Info("PeerAuthenticator: Disable peer",
+					slog.String("slot", auth.slotName),
+					slog.String("peer", peer.displayName()))
+			}
+		}
+
+		peer.sess.PeerEnabled = entry.Enabled
+		sessionReset = true
+	}
+
+	if wantDNS := parseDnsServerAddr(entry.DNS); !peer.sess.DNS.Server.Load().Equal(wantDNS) {
+
+		var setValue = func() {
+			if peerExisted {
+				slog.Info("PeerAuthenticator: Update DNS server",
+					slog.String("slot", auth.slotName),
+					slog.String("peer", peer.displayName()),
+					slog.String("dns", wantDNS.Name()))
+			}
+			peer.sess.DNS.Server.Store(wantDNS)
+		}
+
+		// the dns update is a bit complicated here,
+		// but it basically boils down to making sure
+		// that you're not blocking the whole authenticator
+		// while checking whether or not a provided server is valid
+
+		if tester := auth.dnsTester; tester != nil {
+
+			// an atomic bool acts as a guard here to make sure that
+			// the subsequent refresh calls don't create a logic race,
+			// where the same DNS server is checked by multiple routines in parallel.
+			// this, however can cause the DNS to lag behind until the next update cycle
+
+			if peer.dnsLocked.CompareAndSwap(false, true) {
+
+				peer.wg.Add(1)
+
+				go func() {
+
+					defer peer.wg.Done()
+					defer peer.dnsLocked.Store(false)
+
+					if err := tester.Test(context.Background(), wantDNS.Addr()); err != nil {
+						slog.Warn("PeerAuthenticator: DNS server cannot be assigned",
+							slog.String("slot", auth.slotName),
+							slog.String("peer", peer.displayName()),
+							slog.String("dns", entry.DNS),
+							slog.String("err", err.Error()))
+						return
+					}
+
+					setValue()
+				}()
+			}
+
+		} else {
+			setValue()
+		}
+	}
+
+	if wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr); err != nil {
+
+		slog.Warn("PeerAuthenticator: Outbound IP cannot be assigned",
+			slog.String("slot", auth.slotName),
+			slog.String("peer", peer.displayName()),
+			slog.String("addr", entry.OutboundAddr),
+			slog.String("err", err.Error()))
+
+	} else if !peer.sess.Dialer.OutboundAddr.Load().Equal(wantOutboundAddr) {
+
+		if peerExisted {
+			slog.Info("PeerAuthenticator: Update outbound address",
+				slog.String("slot", auth.slotName),
+				slog.String("peer", peer.displayName()),
+				slog.String("addr", wantOutboundAddr.String()))
+		}
+
+		peer.sess.Dialer.OutboundAddr.Store(wantOutboundAddr)
+		sessionReset = true
+	}
+
+	if peer.sess.Pool.ConnectionLimit() != entry.MaxConnections {
+
+		if peerExisted {
+			slog.Info("PeerAuthenticator: Update connection limit",
+				slog.String("slot", auth.slotName),
+				slog.String("peer", peer.displayName()),
+				slog.Int("maxconn", entry.MaxConnections))
+		}
+
+		if err := peer.sess.Pool.SetConnectionLimit(entry.MaxConnections); err != nil {
+			slog.Error("PeerAuthenticator: Update connection limit",
+				slog.String("slot", auth.slotName),
+				slog.String("peer", peer.displayName()),
+				slog.Int("maxconn", entry.MaxConnections),
+				slog.String("err", err.Error()))
+		}
+	}
+
+	wantRx, wantTx := unwrapPeerBandwidth(entry.Bandwidth)
+	if haveRx, haveTx := peer.sess.Pool.Bandwidth(); wantRx != haveRx || wantTx != haveTx {
+
+		if peerExisted {
+			slog.Info("PeerAuthenticator: Update bandwidth",
+				slog.String("slot", auth.slotName),
+				slog.String("peer", peer.displayName()),
+				slog.Int64("rx_rate", wantRx),
+				slog.Int64("tx_rate", wantTx))
+		}
+
+		peer.sess.Pool.SetBandwidth(wantRx, wantTx)
+	}
+
+	if peerExisted && sessionReset {
+
+		slog.Debug("PeerAuthenticator: Forcing re-auth",
+			slog.String("slot", auth.slotName),
+			slog.String("peer", peer.displayName()))
+
+		peer.sess.Reset()
+	}
+
+	if !peerExisted {
+
+		rxMax, txMax := peer.sess.Pool.Bandwidth()
+
+		slog.Info("PeerAuthenticator: Add peer",
+			slog.String("slot", auth.slotName),
+			slog.String("peer", peer.displayName()),
+			slog.String("addr", peer.sess.Dialer.OutboundAddr.Load().String()),
+			slog.String("dns", peer.sess.DNS.Server.Load().Name()),
+			slog.Int("max_conn", peer.sess.Pool.ConnectionLimit()),
+			slog.Int64("rx_rate", rxMax),
+			slog.Int64("tx_rate", txMax))
 	}
 }
 
@@ -377,6 +412,8 @@ type peerSlot struct {
 	user      *ProxyPeerUserInfo
 	authRl    utils.ExpireMap[uint64]
 	sess      proxyd.ProxySession
+	mtx       sync.Mutex
+	wg        sync.WaitGroup
 	dnsLocked atomic.Bool
 }
 
