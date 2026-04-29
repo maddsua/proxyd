@@ -79,7 +79,7 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 		// that you're not blocking the whole authenticator
 		// while checking whether or not a provided server is valid
 
-		var applyResult = func(err error) {
+		var applyResult = func(err error, logUpdate bool) {
 
 			if err != nil {
 				slog.Warn("PeerAuthenticator: DNS server cannot be assigned",
@@ -90,7 +90,7 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 				return
 			}
 
-			if peer.init {
+			if logUpdate {
 				slog.Info("PeerAuthenticator: Update DNS server",
 					slog.String("slot", peer.parentName),
 					slog.String("peer", peer.displayName()),
@@ -103,9 +103,9 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 		// and only go poke at it if that is absolutely necessary
 
 		if wantDNS == nil {
-			applyResult(nil)
+			applyResult(nil, peer.init)
 		} else if err, valid := peer.dnsTester.LookupCached(wantDNS.Addr()); valid {
-			applyResult(err)
+			applyResult(err, peer.init)
 		} else if peer.dnsLocked.CompareAndSwap(false, true) {
 
 			// an atomic bool acts as a guard here to make sure that
@@ -115,10 +115,12 @@ func (peer *peerSlot) refresh(entry ProxyTablePeerEntry) {
 
 			peer.wg.Add(1)
 
+			logUpdate := peer.init
+
 			go func() {
 				defer peer.wg.Done()
 				defer peer.dnsLocked.Store(false)
-				applyResult(peer.dnsTester.Test(context.Background(), wantDNS.Addr()))
+				applyResult(peer.dnsTester.Test(context.Background(), wantDNS.Addr()), logUpdate)
 			}()
 
 			if peer.init {
