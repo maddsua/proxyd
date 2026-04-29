@@ -214,7 +214,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 
 		if wantDNS, err := unwrapDnsServerAddr(ctx, auth.dnsTester, entry.DNS); err != nil {
 
-			slog.Warn("PeerAuthenticator: New DNS server unreachable",
+			slog.Warn("PeerAuthenticator: DNS server cannot be assigned",
 				slog.String("slot", auth.slotName),
 				slog.String("peer", peer.displayName()),
 				slog.String("dns", entry.DNS),
@@ -234,7 +234,7 @@ func (auth *peerAuthenticator) RefreshPeers(ctx context.Context, peerList []Prox
 
 		if wantOutboundAddr, err := unwrapPeerOutboundIP(entry.OutboundAddr); err != nil {
 
-			slog.Warn("PeerAuthenticator: New outbound IP cannot be assigned",
+			slog.Warn("PeerAuthenticator: Outbound IP cannot be assigned",
 				slog.String("slot", auth.slotName),
 				slog.String("peer", peer.displayName()),
 				slog.String("addr", entry.OutboundAddr),

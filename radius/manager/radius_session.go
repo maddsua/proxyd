@@ -105,7 +105,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 	var sessionReset bool
 
 	if wrantFramedIP, err := unwrapFramedIP(peer.FramedIP); err != nil {
-		slog.Warn("RADIUS: New framed IP cannot be assigned",
+		slog.Warn("RADIUS: Framed IP cannot be assigned",
 			slog.String("slot", state.slotID),
 			slog.String("peer", state.sess.PeerID),
 			slog.String("framed_ip", peer.FramedIP.String()),
@@ -125,7 +125,7 @@ func (state *peerSessionState) refresh(ctx context.Context, peer *radius_pkg.Pee
 
 	if wantDns, err := unwrapDnsServerAddr(ctx, state.dnsTester, peer.DNSServer); err != nil {
 
-		slog.Warn("RADIUS: New DNS server unreachable",
+		slog.Warn("RADIUS: DNS server cannot be assigned",
 			slog.String("slot", state.slotID),
 			slog.String("peer", state.sess.PeerID),
 			slog.String("dns", peer.DNSServer.String()),
