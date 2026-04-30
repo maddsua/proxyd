@@ -14,6 +14,7 @@ import (
 	"github.com/maddsua/layeh-radius/rfc3576"
 	"github.com/maddsua/proxyd"
 	radius_pkg "github.com/maddsua/proxyd/radius"
+	"github.com/maddsua/proxyd/utils"
 )
 
 type peerEntry struct {
@@ -171,13 +172,28 @@ func (auth *peerAuthenticator) getIndexAccountingSession(acctID string) *peerSes
 
 func (auth *peerAuthenticator) indexRefreshRoutine() {
 
-	ticker := time.NewTicker(time.Second)
+	const interval = time.Second
+
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+
+	tw := utils.TimingWatcher{Quota: interval}
 
 	for {
 		select {
+
 		case <-ticker.C:
+
+			tw.Watch()
+
 			auth.refreshIndex(auth.refreshCtx)
+
+			if elapsed, exceeded := tw.Measure(); exceeded {
+				slog.Warn("RADIUS: Index refresh took too long",
+					slog.Duration("timeout", tw.Quota),
+					slog.Duration("t", elapsed))
+			}
+
 		case <-auth.refreshCtx.Done():
 			return
 		}

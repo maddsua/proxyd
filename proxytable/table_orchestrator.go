@@ -31,27 +31,20 @@ func (orch *Orchestrator) rebalanceRoutine() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	var longestDelay time.Duration
+	tw := utils.TimingWatcher{Quota: interval}
 
 	for {
 		select {
 		case <-ticker.C:
 
-			started := time.Now()
+			tw.Watch()
 
 			orch.Rebalance()
 
-			elapsed := time.Since(started)
-			if elapsed > interval && elapsed > longestDelay {
-
+			if elapsed, exceeded := tw.Measure(); exceeded {
 				slog.Warn("Orchestrator: Pool rebalance took too long",
-					slog.Duration("timeout", interval),
+					slog.Duration("timeout", tw.Quota),
 					slog.Duration("t", elapsed))
-
-				longestDelay = elapsed
-
-			} else if elapsed < interval {
-				longestDelay = 0
 			}
 
 		case <-orch.rebalanceDone:
