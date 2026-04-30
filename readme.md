@@ -12,13 +12,22 @@ Another aspect is strictly political. I don't really trust a bunch of commie vib
 
 Anyway, as of now I don't got too much stuff going on here. For now it's just the basics.
 
-### Proxy protocols
-
-| Protocol | Status | Feature set | Auth methods | Note |
-| --- | --- | --- | --- | --- |
-| SOCKS 4 | ⚠️ Stub | - | Not supported | Is present for compatibility reasons to gracefully reject requests |
-| SOCKS 5 | ⚠️ Partial support | TCP CONNECT, IPv6 | Usename/password | BIND not supported; UDP not supported |
-| HTTP | ✅ Full support | FORWARD, CONNECT (TUNNEL), IPv6 | Basic auth | Full http/1.1 proxy spec support (allegedly, I didn't even read it thrugh) |
+| Feature/service         | SOCKS 4 | SOCKS 5 | HTTP |
+| ------------------------ | :-----: | :-----: | :--: |
+| Stub (noop)              |    +    |         |      |
+| TCP tunneling            |         |    +    |  +   |
+| UDP bind                 |    -    |    -    |  -   |
+| HTTP  request forwarding |         |         |  +   |
+| WebSockets forwarding    |         |         |  +   |
+| SSE forwarding           |         |         |  +   |
+| TLS                      |    -    |    -    |  -   |
+| IPv4 destination address |         |    +    |  +   |
+| IPv6 destination address |         |    +    |  +   |
+| FQDN destination address |         |    +    |  +   |
+| Username auth            |         |    +    |  +   |
+| Configurable DNS         |         |    +    |  +   |
+| Bandwidth control        |         |    +    |  +   |
+| Configurable outbound IP |         |    +    |  +   |
 
 ### Management interfaces
 
