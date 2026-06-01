@@ -11,10 +11,16 @@ import (
 const GlobalConfigLocation = "/etc/proxyd/proxyd.yml"
 
 type GlobalConfiguration struct {
-	Debug   bool                `json:"debug" yaml:"debug"`
-	Manager ManagerOptions      `json:"manager" yaml:"manager"`
-	RPC     RPCServerOptions    `json:"rpc_server" yaml:"rpc_server"`
-	Radius  RadiusServerOptions `json:"radius_server" yaml:"radius_server"`
+	LegacyManagerOptions `yaml:",inline"`
+	Debug                bool                `json:"debug" yaml:"debug"`
+	Manager              ManagerOptions      `json:"manager" yaml:"manager"`
+	RPC                  RPCServerOptions    `json:"rpc_server" yaml:"rpc_server"`
+	Radius               RadiusServerOptions `json:"radius_server" yaml:"radius_server"`
+}
+
+type LegacyManagerOptions struct {
+	RemoteURL   string `json:"remote_url" yaml:"remote_url"`
+	SecretToken string `json:"secret_token" yaml:"secret_token"`
 }
 
 const (

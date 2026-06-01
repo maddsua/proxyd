@@ -77,86 +77,23 @@ func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 	switch cfg.Manager.Type {
 
 	case ManagerTypeLocal:
-
 		slog.Info("Load local configuration")
-
 		manager = &local.Manager{ConfigLocation: configLocation}
 
 	case ManagerTypeRPC:
-
-		opts := cfg.Manager.RPCClientOptions
-
-		endpointURL, _ := url.Parse(opts.EndpointURL)
-		if endpointURL == nil || endpointURL.Scheme == "" || endpointURL.Host == "" {
-			slog.Error("Invalid RPC endpoint",
-				slog.String("url", opts.EndpointURL))
-			os.Exit(1)
-		}
-
-		client := rpc_client.Client{EndpointURL: endpointURL.String()}
-		if client.Token, err = rpc.ParseInstanceToken(opts.SecretToken); err != nil {
-			slog.Error("Invalid RPC token",
-				slog.String("err", err.Error()))
-			os.Exit(1)
-		}
-
-		if err := client.Ready(context.Background()); err != nil {
-			slog.Error("RPC check failed",
-				slog.String("err", err.Error()))
-			os.Exit(1)
-		}
-
-		slog.Info("RPC upstream OK",
-			slog.String("url", client.EndpointURL))
-
-		manager = &rpc_manager.Manager{Client: &client}
+		manager = initRPCManager(cfg.Manager.RPCClientOptions)
 
 	case ManagerTypeRadius:
-
-		opts := cfg.Manager.RadiusOptions
-
-		if opts.AuthAddr == "" {
-			slog.Error("RADIUS auth server address is not set")
-			os.Exit(1)
-		} else if opts.Secret == "" {
-			slog.Error("RADIUS secret is not set")
-			os.Exit(1)
-		}
-
-		svclist := cfg.Manager.Services
-		if len(svclist) == 0 {
-			slog.Error("No proxy services defined")
-			os.Exit(1)
-		}
-
-		slots := make([]radius.ProxySlotOptions, len(svclist))
-		for idx, entry := range svclist {
-			slots[idx] = radius.ProxySlotOptions{
-				BindAddr:           entry.BindAddr,
-				Service:            entry.Type,
-				HttpServiceOptions: entry.HttpServiceOptions,
-			}
-		}
-
-		slog.Info("Set RADIUS auth",
-			slog.String("addr", opts.AuthAddr))
-
-		if opts.AcctAddr != "" {
-			slog.Info("Set RADIUS accounting",
-				slog.String("addr", opts.AuthAddr))
-		} else {
-			slog.Info("Set RADIUS accounting",
-				slog.String("addr", opts.AuthAddr))
-		}
-
-		if opts.DacAddr != "" {
-			slog.Info("Set RADIUS DAC",
-				slog.String("addr", opts.DacAddr))
-		}
-
-		manager = &radius.Manager{Opts: opts, Slots: slots}
+		manager = initRADIUSManager(cfg.Manager.RadiusOptions, cfg.Manager.Services)
 
 	default:
+
+		if cfg.LegacyManagerOptions.RemoteURL != "" {
+			manager = initRPCManagerWithLegacyConfig(cfg.LegacyManagerOptions)
+			slog.Warn("A legacy API/RPC config has been loaded. Please update it to use the new syntax")
+			break
+		}
+
 		slog.Error("Service manager not configured")
 		os.Exit(1)
 	}
@@ -164,20 +101,19 @@ func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 	errCh := make(chan error, 1)
 
 	go func() {
-		slog.Debug("Starting manager")
 		errCh <- manager.Exec()
 	}()
 
 	select {
+	case <-exitCh:
+		slog.Warn("Service exiting ...")
+		break
 	case err := <-errCh:
 		if err != nil {
-			slog.Error("Proxy manager",
+			slog.Error("Service terminated",
 				slog.String("err", err.Error()))
 		}
-	case <-exitCh:
 	}
-
-	slog.Warn("Proxy manager exiting")
 
 	exitctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -186,4 +122,83 @@ func cmd_proxy(args *utils.ArgList, exitCh <-chan os.Signal) {
 		slog.Error("Proxy manager",
 			slog.String("err", err.Error()))
 	}
+}
+
+func initRADIUSManager(opts radius.RadiusOptions, svcs []local.ProxyServiceConfig) proxyd.ServiceManager {
+
+	if opts.AuthAddr == "" {
+		slog.Error("RADIUS auth server address is not set")
+		os.Exit(1)
+	} else if opts.Secret == "" {
+		slog.Error("RADIUS secret is not set")
+		os.Exit(1)
+	}
+
+	if len(svcs) == 0 {
+		slog.Error("No proxy services defined")
+		os.Exit(1)
+	}
+
+	slots := make([]radius.ProxySlotOptions, len(svcs))
+	for idx, entry := range svcs {
+		slots[idx] = radius.ProxySlotOptions{
+			BindAddr:           entry.BindAddr,
+			Service:            entry.Type,
+			HttpServiceOptions: entry.HttpServiceOptions,
+		}
+	}
+
+	slog.Info("Set RADIUS auth",
+		slog.String("addr", opts.AuthAddr))
+
+	if opts.AcctAddr != "" {
+		slog.Info("Set RADIUS accounting",
+			slog.String("addr", opts.AuthAddr))
+	} else {
+		slog.Info("Set RADIUS accounting",
+			slog.String("addr", opts.AuthAddr))
+	}
+
+	if opts.DacAddr != "" {
+		slog.Info("Set RADIUS DAC",
+			slog.String("addr", opts.DacAddr))
+	}
+
+	return &radius.Manager{Opts: opts, Slots: slots}
+}
+
+func initRPCManager(opts rpc_client.RPCClientOptions) proxyd.ServiceManager {
+
+	endpointURL, err := url.Parse(opts.EndpointURL)
+	if err != nil || endpointURL.Scheme == "" || endpointURL.Host == "" {
+		slog.Error("Invalid RPC endpoint",
+			slog.String("url", opts.EndpointURL))
+		os.Exit(1)
+	}
+
+	client := rpc_client.Client{EndpointURL: endpointURL.String()}
+
+	if client.Token, err = rpc.ParseInstanceToken(opts.SecretToken); err != nil {
+		slog.Error("Invalid RPC token",
+			slog.String("err", err.Error()))
+		os.Exit(1)
+	}
+
+	if err := client.Ready(context.Background()); err != nil {
+		slog.Error("RPC check failed",
+			slog.String("err", err.Error()))
+		os.Exit(1)
+	}
+
+	slog.Info("RPC upstream OK",
+		slog.String("url", client.EndpointURL))
+
+	return &rpc_manager.Manager{Client: &client}
+}
+
+func initRPCManagerWithLegacyConfig(opts LegacyManagerOptions) proxyd.ServiceManager {
+	return initRPCManager(rpc_client.RPCClientOptions{
+		EndpointURL: opts.RemoteURL,
+		SecretToken: opts.SecretToken,
+	})
 }

@@ -1,0 +1,49 @@
+manager:
+  type: radius
+  radius_secret: test
+  radius_auth_addr: 127.0.0.1:1812
+  dac_listen_addr: 127.0.0.1:3799
+  endpoint_url: http://localhost:46135
+  secret_token: Uanwa0HbSXu_iTsnAWDj_g.vhQAFxd5vX9t5vHoPvWiw1ZDsi2NGt6AhPhkOWwMUGKRHP6WSR8URQmnDWmpctbmfZGqr8sEDOdgqro8xJDSxQ
+  services:
+    - bind_addr: 127.0.0.1:11080
+      type: socks
+      users:
+        - username: maddsua
+          password: test
+          dns: 1.1.1.1:54
+    - bind_addr: 127.0.0.1:10080
+      type: http
+      http_forward_enabled: true
+      users:
+        - username: maddsua
+          password: test
+#          outbound_addr: 1.1.1.1
+#          dns: 1.1.1.1:56
+debug: true
+rpc_server:
+  instances:
+    - id: 51a9f06b-41db-497b-bf89-3b270160e3fe
+      secret: vhQAFxd5vX9t5vHoPvWiw1ZDsi2NGt6AhPhkOWwMUGKRHP6WSR8URQmnDWmpctbmfZGqr8sEDOdgqro8xJDSxQ
+      services:
+      - bind_addr: 127.0.0.1:10080
+        type: http
+        http_forward_enabled: true
+        users:
+          - username: maddsua
+            password: test
+      - bind_addr: 127.0.0.1:11080
+        type: socks
+        users:
+          - username: maddsua
+            password: test
+radius_server:
+  secret: test
+  listen_addr: 127.0.0.1:1812
+  dac_addr: 127.0.0.1:3799
+  users:
+    - username: maddsua
+      password: test
+      bandwidth_kbit: 100
+#      dns: 1.1.10.1
+#      proxy_host: 127.0.0.1:10080
