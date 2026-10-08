@@ -2,11 +2,13 @@
 
 # A pocket-sized proxy orchestration service
 
-You know how annoying it is to rustle with config files, if you ever tried to update multiple proxy configurations at once. Even though some proxy services offer some sort of an administrative API, a lot of the time those are incomplete, undocumented, buggy or all of the above.
+If you ever tried updating multiple proxy configurations at once you know exactly how annoying it is to rustle with config files.
+Even though some proxy services offer some sort of an administrative API, a lot of the time those are incomplete, undocumented, buggy or all of the above.
 
-I am not claiming that this thing is any better, but making my own thing sounded like a better idea, rather than to spending probably even more time trying to make someone else's crappy code work the way I want.
+I am not claiming that this thing is any better, but making my own one sounded like a much better idea compared to spending probably even more time trying to make someone else's crappy code work the way I want.
 
-Another aspect is strictly political. I don't really trust a bunch of commie vibe-coders when it comes to anything remotely related to security. And guess what - proxies are kinda mission critical, unless you use them to browse some adult websites. With the latest tendencies in the world however, I guess even if that's your entire threat model, you'd still want to be sure it ain't tracking your activity and beaming it straight to the party/ofcom/big_brotha/etc.
+Another aspect is strictly political. I don't really trust a bunch of commie vibe-coders when it comes to anything remotely related to security. And guess what - proxies are kinda mission critical, unless you use them to browse adult websites or sum shi like that.
+With the latest tendencies in the world, however, I guess even if that's your entire threat model, you'd still want to ensure that it ain't tracking your activity and is not beaming it straight to the party/ofcom/big_brotha/etc.
 
 ## Feature set
 
