@@ -91,6 +91,8 @@ manager:
   secret_token: xws-pM2nSrWHa7k...
 ```
 
+Refer to [REST API definition](rest-rpc-spec.yml) for the specifics.
+
 ### Configuration
 
 Default config location: `/etc/proxyd/proxyd.yml`.
